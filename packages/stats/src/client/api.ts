@@ -148,8 +148,15 @@ export async function resetSettingValue(path: string): Promise<{ path: string; v
 		body: JSON.stringify({ path }),
 	});
 }
-export async function getSessionsList(signal?: AbortSignal): Promise<SessionListItem[]> {
-	return fetchJson<SessionListItem[]>(`${API_BASE}/sessions/list`, { signal });
+export async function getSessionsList(
+	options?: { q?: string; includeArchived?: boolean },
+	signal?: AbortSignal,
+): Promise<SessionListItem[]> {
+	const params = new URLSearchParams();
+	if (options?.q) params.set("q", options.q);
+	if (options?.includeArchived) params.set("includeArchived", "true");
+	const url = params.toString() ? `${API_BASE}/sessions/list?${params.toString()}` : `${API_BASE}/sessions/list`;
+	return fetchJson<SessionListItem[]>(url, { signal });
 }
 
 export async function getSessionMessages(

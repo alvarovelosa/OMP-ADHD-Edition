@@ -1,7 +1,14 @@
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@oh-my-pi/pi-ai";
-import { getAgentDir as getDefaultAgentDir, logger, parseJsonlLenient, toError } from "@oh-my-pi/pi-utils";
+import {
+	getAgentDir as getDefaultAgentDir,
+	getSessionsDir,
+	logger,
+	parseJsonlLenient,
+	toError,
+} from "@oh-my-pi/pi-utils";
 import { AgentStorage } from "./agent-storage";
 import { computeDefaultSessionDir } from "./session-paths";
 import { FileSessionStorage, type SessionStorage } from "./session-storage";
@@ -49,6 +56,8 @@ export interface SessionInfo {
 	 * session can be resumed with `--resume <N>` instead of an id prefix.
 	 */
 	seq?: number;
+	/** Whether this session has been archived. Unset or false for active sessions. */
+	archived?: boolean;
 }
 
 export interface ResolvedSessionMatch {
@@ -372,6 +381,71 @@ function getSessionListWorkerCount(fileCount: number): number {
  * {@link SessionStatus}) when `withStatus` is set — the recent/most-recent
  * lookups skip it.
  */
+function buildSessionInfoFromContent(
+	file: string,
+	content: string,
+	suffix: string,
+	stat: { size: number; mtime: Date },
+	withStatus: boolean,
+): SessionInfo | undefined {
+	const { size, mtime } = stat;
+	const entries = parseJsonlLenient<Record<string, unknown>>(content);
+	const header = parseSessionListHeader(content, entries);
+	if (!header) return undefined;
+
+	let parsedMessageCount = 0;
+	let firstMessage = "";
+	const allMessages: string[] = [];
+	let shortSummary: string | undefined;
+
+	for (let i = 1; i < entries.length; i++) {
+		const entry = entries[i] as { type?: string; message?: Message; shortSummary?: string };
+
+		if (entry.type === "compaction" && typeof entry.shortSummary === "string") {
+			shortSummary = entry.shortSummary;
+		}
+
+		if (entry.type === "message" && entry.message) {
+			parsedMessageCount++;
+
+			if (entry.message.role === "user" || entry.message.role === "assistant") {
+				const textContent = extractTextFromContent(entry.message.content);
+
+				if (textContent) {
+					allMessages.push(textContent);
+
+					if (!firstMessage && entry.message.role === "user") {
+						firstMessage = textContent;
+					}
+				}
+			}
+		}
+	}
+
+	firstMessage ||= extractFirstDisplayMessageFromPrefix(content) ?? "";
+	const messageCount = Math.max(parsedMessageCount, countMessageMarkers(content));
+	return {
+		path: file,
+		id: header.id,
+		cwd: header.cwd ?? "",
+		title: sanitizeSessionName(header.title ?? shortSummary),
+		parentSessionPath: header.parentSession,
+		created: new Date(header.timestamp ?? ""),
+		modified: mtime,
+		messageCount,
+		size,
+		firstMessage: firstMessage || "(no messages)",
+		allMessagesText: allMessages.length > 0 ? allMessages.join(" ") : firstMessage,
+		status: withStatus ? deriveSessionStatus(suffix) : undefined,
+	};
+}
+
+/**
+ * Scan a single session file into a {@link SessionInfo}. Always reads the 4 KB
+ * header/first-message prefix; only reads the 32 KB tail window (and derives
+ * {@link SessionStatus}) when `withStatus` is set — the recent/most-recent
+ * lookups skip it.
+ */
 async function scanSessionFile(
 	file: string,
 	storage: SessionStorage,
@@ -384,56 +458,7 @@ async function scanSessionFile(
 			SESSION_LIST_PREFIX_BYTES,
 			withStatus ? SESSION_LIST_SUFFIX_BYTES : 0,
 		);
-		const { size, mtime } = stat;
-		const entries = parseJsonlLenient<Record<string, unknown>>(content);
-		const header = parseSessionListHeader(content, entries);
-		if (!header) return undefined;
-
-		let parsedMessageCount = 0;
-		let firstMessage = "";
-		const allMessages: string[] = [];
-		let shortSummary: string | undefined;
-
-		for (let i = 1; i < entries.length; i++) {
-			const entry = entries[i] as { type?: string; message?: Message; shortSummary?: string };
-
-			if (entry.type === "compaction" && typeof entry.shortSummary === "string") {
-				shortSummary = entry.shortSummary;
-			}
-
-			if (entry.type === "message" && entry.message) {
-				parsedMessageCount++;
-
-				if (entry.message.role === "user" || entry.message.role === "assistant") {
-					const textContent = extractTextFromContent(entry.message.content);
-
-					if (textContent) {
-						allMessages.push(textContent);
-
-						if (!firstMessage && entry.message.role === "user") {
-							firstMessage = textContent;
-						}
-					}
-				}
-			}
-		}
-
-		firstMessage ||= extractFirstDisplayMessageFromPrefix(content) ?? "";
-		const messageCount = Math.max(parsedMessageCount, countMessageMarkers(content));
-		return {
-			path: file,
-			id: header.id,
-			cwd: header.cwd ?? "",
-			title: sanitizeSessionName(header.title ?? shortSummary),
-			parentSessionPath: header.parentSession,
-			created: new Date(header.timestamp ?? ""),
-			modified: mtime,
-			messageCount,
-			size,
-			firstMessage: firstMessage || "(no messages)",
-			allMessagesText: allMessages.length > 0 ? allMessages.join(" ") : firstMessage,
-			status: withStatus ? deriveSessionStatus(suffix) : undefined,
-		};
+		return buildSessionInfoFromContent(file, content, suffix, stat, withStatus);
 	} catch {
 		return undefined;
 	}
@@ -601,6 +626,69 @@ export async function listAllSessions(storage: SessionStorage = new FileSessionS
 			path.join(sessionsRoot, name),
 		);
 		return await collectSessionsFromFiles(files, storage, true);
+	} catch {
+		return [];
+	}
+}
+
+async function readGzipPrefix(file: string, maxBytes = SESSION_LIST_PREFIX_BYTES): Promise<string> {
+	const stream = Bun.file(file).stream().pipeThrough(new DecompressionStream("gzip"));
+	const reader = stream.getReader();
+	const chunks: Uint8Array[] = [];
+	let totalBytes = 0;
+	try {
+		while (totalBytes < maxBytes) {
+			const { done, value } = await reader.read();
+			if (done || !value) break;
+			chunks.push(value);
+			totalBytes += value.byteLength;
+		}
+	} finally {
+		try {
+			await reader.cancel();
+		} catch {}
+	}
+	if (chunks.length === 0) return "";
+	const combined = new Uint8Array(totalBytes);
+	let offset = 0;
+	for (const chunk of chunks) {
+		combined.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	const sliced = totalBytes > maxBytes ? combined.subarray(0, maxBytes) : combined;
+	return new TextDecoder("utf-8").decode(sliced);
+}
+
+/** List all archived sessions across all project directories (newest first). */
+export async function listArchivedSessions(): Promise<SessionInfo[]> {
+	try {
+		const archiveRoot = path.join(path.dirname(getSessionsDir(getDefaultAgentDir())), "archive", "sessions");
+		const gzFiles = await Array.fromAsync(new Bun.Glob("*/*.jsonl.gz").scan(archiveRoot), name =>
+			path.join(archiveRoot, name),
+		);
+		const jsonlFiles = await Array.fromAsync(new Bun.Glob("*/*.jsonl").scan(archiveRoot), name =>
+			path.join(archiveRoot, name),
+		);
+		const files = [...gzFiles, ...jsonlFiles];
+		const sessions: SessionInfo[] = [];
+		for (const file of files) {
+			try {
+				const stat = fs.statSync(file);
+				const prefix = file.endsWith(".gz")
+					? await readGzipPrefix(file, SESSION_LIST_PREFIX_BYTES)
+					: await Bun.file(file).slice(0, SESSION_LIST_PREFIX_BYTES).text();
+				const info = buildSessionInfoFromContent(file, prefix, "", stat, false);
+				if (info) {
+					info.archived = true;
+					sessions.push(info);
+				}
+			} catch {
+				// Ignore unreadable archive files
+			}
+		}
+		sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+		await attachSessionSeqNumbers(sessions);
+		return sessions;
 	} catch {
 		return [];
 	}

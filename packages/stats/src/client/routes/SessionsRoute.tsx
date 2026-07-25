@@ -1,10 +1,10 @@
-import { Archive, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Archive, ChevronDown, ChevronRight, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { archiveSession, deleteSession, getSessionsList } from "../api";
 import { formatCost, formatInteger, formatRelativeTime } from "../data/formatters";
 import { useResource } from "../data/useResource";
 import type { SessionListItem } from "../types";
-import { AsyncBoundary, DataTable, Panel, SessionDrawer, StatusPill, statusPillVariant } from "../ui";
+import { AsyncBoundary, DataTable, Panel, SessionDrawer, StatusPill, statusPillVariant, TextField, Toggle } from "../ui";
 
 /** Sessions below this count are shown individually (no grouping). */
 const GROUP_THRESHOLD = 2;
@@ -24,13 +24,21 @@ export interface SessionsRouteProps {
 export function SessionsRoute({ active }: SessionsRouteProps) {
 	const [selectedSession, setSelectedSession] = useState<SessionListItem | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
+	const [search, setSearch] = useState("");
+	const [debouncedSearch, setDebouncedSearch] = useState("");
+	const [includeArchived, setIncludeArchived] = useState(false);
+
+	useEffect(() => {
+		const timer = setTimeout(() => setDebouncedSearch(search), 300);
+		return () => clearTimeout(timer);
+	}, [search]);
 
 	const {
 		data: sessions,
 		error,
 		loading,
 		refetch,
-	} = useResource(["sessions-list"], getSessionsList, {
+	} = useResource(["sessions-list", debouncedSearch, includeArchived], signal => getSessionsList({ q: debouncedSearch, includeArchived }, signal), {
 		pollMs: 30000,
 		enabled: active,
 	});
@@ -159,6 +167,25 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 								</button>
 							)}
 							<span className="stats-font-medium stats-text-primary">{item.title}</span>
+							{item.archived && (
+								<span
+									className="stats-text-xs"
+									style={{
+										marginLeft: "6px",
+										padding: "1px 6px",
+										borderRadius: "4px",
+										background: "var(--stats-bg-subtle, rgba(255,255,255,0.06))",
+										color: "var(--stats-text-muted)",
+										fontWeight: "normal",
+										display: "inline-flex",
+										alignItems: "center",
+										gap: "3px",
+									}}
+									title="Archived session"
+								>
+									<Archive size={11} /> Archived
+								</span>
+							)}
 							{isGroupRep && (
 								<span
 									className="stats-text-xs stats-text-muted"
@@ -209,21 +236,23 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 				className: "stats-text-right",
 				render: (item: SessionListItem) => (
 					<div style={{ display: "inline-flex", gap: "6px" }} onClick={e => e.stopPropagation()}>
-						<button
-							type="button"
-							onClick={e => handleArchiveSession(e, item)}
-							className="stats-sessions-action-btn"
-							title="Archive session"
-							style={{
-								padding: "3px 6px",
-								fontSize: "12px",
-								display: "inline-flex",
-								alignItems: "center",
-								gap: "3px",
-							}}
-						>
-							<Archive size={13} /> Archive
-						</button>
+						{!item.archived && (
+							<button
+								type="button"
+								onClick={e => handleArchiveSession(e, item)}
+								className="stats-sessions-action-btn"
+								title="Archive session"
+								style={{
+									padding: "3px 6px",
+									fontSize: "12px",
+									display: "inline-flex",
+									alignItems: "center",
+									gap: "3px",
+								}}
+							>
+								<Archive size={13} /> Archive
+							</button>
+						)}
 						<button
 							type="button"
 							onClick={e => handleDeleteSession(e, item)}
@@ -277,14 +306,16 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 				style={{ marginTop: "8px", display: "flex", justifyContent: "flex-end", gap: "8px" }}
 				onClick={e => e.stopPropagation()}
 			>
-				<button
-					type="button"
-					onClick={e => handleArchiveSession(e, item)}
-					className="stats-sessions-action-btn"
-					style={{ padding: "3px 8px", fontSize: "12px" }}
-				>
-					Archive
-				</button>
+				{!item.archived && (
+					<button
+						type="button"
+						onClick={e => handleArchiveSession(e, item)}
+						className="stats-sessions-action-btn"
+						style={{ padding: "3px 8px", fontSize: "12px" }}
+					>
+						Archive
+					</button>
+				)}
 				<button
 					type="button"
 					onClick={e => handleDeleteSession(e, item)}
@@ -305,7 +336,19 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 					<p className="stats-drawer-error-message">{actionError}</p>
 				</div>
 			)}
-			<Panel title="Sessions" subtitle="Browse, view transcript, archive, or delete OMP sessions">
+			<Panel
+				title="Sessions"
+				subtitle="Browse, view transcript, archive, or delete OMP sessions"
+				actions={
+					<div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+						<TextField value={search} onChange={setSearch} placeholder="Search sessions…" icon={<Search size={14} />} />
+						<label style={{ display: "inline-flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px" }}>
+							<Toggle checked={includeArchived} onChange={setIncludeArchived} />
+							<span>Show archived</span>
+						</label>
+					</div>
+				}
+			>
 				<AsyncBoundary loading={loading} error={error} data={sessions}>
 					<DataTable
 						columns={columns}

@@ -1686,6 +1686,11 @@
   font-family: inherit;
 }
 
+.stats-settings-textfield::placeholder {
+  color: var(--text-dim, #888);
+  opacity: 0.7;
+}
+
 .stats-settings-textfield:focus {
   border-color: var(--accent);
 }

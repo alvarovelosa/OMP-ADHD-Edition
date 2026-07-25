@@ -217,21 +217,23 @@ export function SessionDrawer({ session, onClose, onArchived, onDeleted }: Sessi
 							<StatusPill variant={statusPillVariant(session.status)}>{session.status}</StatusPill>
 
 							<div style={{ display: "flex", gap: "8px" }}>
-								<button
-									type="button"
-									onClick={handleArchive}
-									disabled={actionBusy}
-									className="stats-sessions-action-btn"
-									style={{
-										display: "inline-flex",
-										alignItems: "center",
-										gap: "4px",
-										padding: "4px 8px",
-										fontSize: "12px",
-									}}
-								>
-									<Archive size={14} /> Archive
-								</button>
+								{!session.archived && (
+									<button
+										type="button"
+										onClick={handleArchive}
+										disabled={actionBusy}
+										className="stats-sessions-action-btn"
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											gap: "4px",
+											padding: "4px 8px",
+											fontSize: "12px",
+										}}
+									>
+										<Archive size={14} /> Archive
+									</button>
+								)}
 								<button
 									type="button"
 									onClick={handleDelete}

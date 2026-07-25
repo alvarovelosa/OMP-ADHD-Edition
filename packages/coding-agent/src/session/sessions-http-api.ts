@@ -1,9 +1,10 @@
 import * as path from "node:path";
+import { gunzipSync } from "node:zlib";
 import { getSessionUsageMap } from "@oh-my-pi/omp-stats";
 import { getAgentDir, getSessionsDir, isEnoent, parseJsonlLenient } from "@oh-my-pi/pi-utils";
 import { archiveDestination, getArchivedSessionsDir, moveSessionWithArtifacts } from "../cli/gc-cli";
 import { applyDashboardCors } from "../utils/dashboard-cors";
-import { listAllSessions, type SessionStatus, sessionDisplayName } from "./session-listing";
+import { listAllSessions, listArchivedSessions, type SessionStatus, sessionDisplayName } from "./session-listing";
 import { FileSessionStorage } from "./session-storage";
 
 export interface SessionListItem {
@@ -19,6 +20,7 @@ export interface SessionListItem {
 	firstMessage: string;
 	status: SessionStatus;
 	seq?: number;
+	archived: boolean;
 	usage?: { requestCount: number; totalTokens: number; totalCost: number };
 }
 
@@ -31,6 +33,11 @@ export interface SessionMessagesResponse {
 	messages: SessionMessageEntry[];
 	total: number;
 	hasMore: boolean;
+}
+
+async function readSessionContent(p: string): Promise<string> {
+	if (p.endsWith(".gz")) return new TextDecoder("utf-8").decode(gunzipSync(await Bun.file(p).bytes()));
+	return new FileSessionStorage().readText(p);
 }
 
 export async function handleSessionsApiRequest(req: Request): Promise<Response> {
@@ -48,10 +55,26 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 			}
 		}
 
-		const sessions = await listAllSessions();
+		const includeArchived = url.searchParams.get("includeArchived") === "1";
+		const sessions = includeArchived
+			? [...(await listAllSessions()), ...(await listArchivedSessions())].sort(
+					(a, b) => b.modified.getTime() - a.modified.getTime(),
+				)
+			: await listAllSessions();
 		const usage = await getSessionUsageMap();
 
-		const items: SessionListItem[] = sessions.slice(0, limit).map(info => ({
+		const q = url.searchParams.get("q")?.trim().toLowerCase();
+		const filtered = q
+			? sessions.filter(
+					s =>
+						sessionDisplayName(s).toLowerCase().includes(q) ||
+						s.cwd.toLowerCase().includes(q) ||
+						s.firstMessage.toLowerCase().includes(q) ||
+						s.allMessagesText.toLowerCase().includes(q),
+				)
+			: sessions;
+
+		const items: SessionListItem[] = filtered.slice(0, limit).map(info => ({
 			path: info.path,
 			id: info.id,
 			cwd: info.cwd,
@@ -64,6 +87,7 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 			firstMessage: info.firstMessage,
 			status: info.status ?? "unknown",
 			seq: info.seq,
+			archived: info.archived ?? false,
 			usage: usage[info.path],
 		}));
 
@@ -73,14 +97,18 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 		if (!sessionPath) {
 			response = Response.json({ error: "Missing session path" }, { status: 400 });
 		} else {
-			const sessionsRoot = path.resolve(getSessionsDir(getAgentDir()));
+			const agentDir = getAgentDir();
+			const sessionsRoot = path.resolve(getSessionsDir(agentDir));
+			const archivedRoot = path.resolve(getArchivedSessionsDir(agentDir));
 			const resolvedPath = path.resolve(sessionPath);
-			if (!resolvedPath.startsWith(sessionsRoot + path.sep)) {
+			const withinManagedRoots =
+				resolvedPath.startsWith(sessionsRoot + path.sep) || resolvedPath.startsWith(archivedRoot + path.sep);
+			if (!withinManagedRoots) {
 				response = Response.json({ error: "Path is outside the managed sessions directory" }, { status: 400 });
 			} else {
 				let content: string;
 				try {
-					content = await new FileSessionStorage().readText(resolvedPath);
+					content = await readSessionContent(resolvedPath);
 				} catch (err) {
 					if (isEnoent(err)) {
 						return applyDashboardCors(req, Response.json({ error: "Session not found" }, { status: 404 }));
@@ -189,9 +217,13 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 		if (!candidatePath || typeof candidatePath !== "string") {
 			response = Response.json({ error: "Missing session path" }, { status: 400 });
 		} else {
-			const sessionsRoot = path.resolve(getSessionsDir(getAgentDir()));
+			const agentDir = getAgentDir();
+			const sessionsRoot = path.resolve(getSessionsDir(agentDir));
+			const archivedRoot = path.resolve(getArchivedSessionsDir(agentDir));
 			const resolvedPath = path.resolve(candidatePath);
-			if (!resolvedPath.startsWith(sessionsRoot + path.sep)) {
+			const withinManagedRoots =
+				resolvedPath.startsWith(sessionsRoot + path.sep) || resolvedPath.startsWith(archivedRoot + path.sep);
+			if (!withinManagedRoots) {
 				response = Response.json({ error: "Path is outside the managed sessions directory" }, { status: 400 });
 			} else {
 				try {

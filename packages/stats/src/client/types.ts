@@ -138,6 +138,7 @@ export interface SessionListItem {
 	firstMessage: string;
 	status: SessionStatus;
 	seq?: number;
+	archived: boolean;
 	usage?: { requestCount: number; totalTokens: number; totalCost: number };
 }
 
