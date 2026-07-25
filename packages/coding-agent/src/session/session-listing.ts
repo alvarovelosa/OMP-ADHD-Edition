@@ -2,6 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@oh-my-pi/pi-ai";
 import { getAgentDir as getDefaultAgentDir, logger, parseJsonlLenient, toError } from "@oh-my-pi/pi-utils";
+import { AgentStorage } from "./agent-storage";
 import { computeDefaultSessionDir } from "./session-paths";
 import { FileSessionStorage, type SessionStorage } from "./session-storage";
 
@@ -41,6 +42,13 @@ export interface SessionInfo {
 	 * synthesized {@link SessionInfo}s (cross-project stubs, tests) leave it unset.
 	 */
 	status?: SessionStatus;
+	/**
+	 * Stable, human-friendly sequence number assigned the first time this session
+	 * is listed (see {@link collectSessionsFromFiles}). Persisted in agent.db,
+	 * never reused, and shown as a `#N` prefix ({@link sessionDisplayName}) so a
+	 * session can be resumed with `--resume <N>` instead of an id prefix.
+	 */
+	seq?: number;
 }
 
 export interface ResolvedSessionMatch {
@@ -65,9 +73,20 @@ const SESSION_LIST_SUFFIX_BYTES = 32_768;
 const SESSION_LIST_PARALLEL_THRESHOLD = 64;
 const SESSION_LIST_MAX_WORKERS = 16;
 
+/**
+ * Some short summaries (compaction fallback titles) echo the `<summary>` XML
+ * wrapper used in prompt context back into their own output. Strip a wrapper
+ * that spans the entire value so it never leaks into a displayed title.
+ */
+function stripSummaryTagWrapper(value: string): string {
+	const match = /^\s*<summary>([\s\S]*)<\/summary>\s*$/i.exec(value);
+	return match ? match[1].trim() : value;
+}
+
 function sanitizeSessionName(value: string | undefined): string | undefined {
 	if (!value) return undefined;
-	const firstLine = value.split(/\r?\n/)[0] ?? "";
+	const unwrapped = stripSummaryTagWrapper(value);
+	const firstLine = unwrapped.split(/\r?\n/)[0] ?? "";
 	const stripped = firstLine.replace(/[\x00-\x1F\x7F]/g, "");
 	const trimmed = stripped.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
@@ -90,20 +109,23 @@ function formatTimeAgo(date: Date): string {
 
 /**
  * Friendly display name for a session: explicit title, then first user prompt,
- * then a timestamp-based label. The raw UUID `id` is intentionally never used —
- * it is unfriendly and indistinguishable from neighboring sessions in the UI.
+ * then a timestamp-based label, prefixed with `#<seq>` when a stable sequence
+ * number has been assigned ({@link collectSessionsFromFiles}). The raw UUID
+ * `id` is intentionally never used — it is unfriendly and indistinguishable
+ * from neighboring sessions in the UI.
  */
 export function sessionDisplayName(info: SessionInfo): string {
+	const prefix = info.seq !== undefined ? `#${info.seq} ` : "";
 	const title = sanitizeSessionName(info.title);
-	if (title) return title;
+	if (title) return prefix + title;
 	const first =
 		info.firstMessage && info.firstMessage !== "(no messages)" ? sanitizeSessionName(info.firstMessage) : undefined;
-	if (first) return first;
+	if (first) return prefix + first;
 	const created = info.created.getTime();
 	const ts = Number.isFinite(created) ? created : info.modified.getTime();
 	const date = new Date(ts);
 	const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-	return `Untitled · ${time}`;
+	return `${prefix}Untitled · ${time}`;
 }
 
 function extractTextFromContent(content: Message["content"]): string {
@@ -402,7 +424,7 @@ async function scanSessionFile(
 			path: file,
 			id: header.id,
 			cwd: header.cwd ?? "",
-			title: header.title ?? shortSummary,
+			title: sanitizeSessionName(header.title ?? shortSummary),
 			parentSessionPath: header.parentSession,
 			created: new Date(header.timestamp ?? ""),
 			modified: mtime,
@@ -434,6 +456,21 @@ async function collectSessionsFromFileStride(
 	return sessions;
 }
 
+async function attachSessionSeqNumbers(sessions: SessionInfo[]): Promise<void> {
+	if (sessions.length === 0) return;
+	try {
+		const storage = await AgentStorage.open();
+		const oldestFirst = [...sessions].sort((a, b) => a.created.getTime() - b.created.getTime());
+		const seqById = storage.getOrAssignSessionSeqBatch(oldestFirst.map(session => session.id));
+		for (const session of sessions) {
+			const seq = seqById.get(session.id);
+			if (seq !== undefined) session.seq = seq;
+		}
+	} catch (error) {
+		logger.warn("Failed to assign session sequence numbers", { error: toError(error).message });
+	}
+}
+
 async function collectSessionsFromFiles(
 	files: string[],
 	storage: SessionStorage,
@@ -452,6 +489,7 @@ async function collectSessionsFromFiles(
 				).flat();
 
 	sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+	await attachSessionSeqNumbers(sessions);
 	return sessions;
 }
 
@@ -592,7 +630,20 @@ export async function getRecentSessions(
 	return recent;
 }
 
+/** Parses a bare or `#`-prefixed positive integer session number, e.g. "12" or "#12". */
+function parseSessionNumberArg(sessionArg: string): number | undefined {
+	const match = /^#?(\d+)$/.exec(sessionArg.trim());
+	if (!match) return undefined;
+	const value = Number(match[1]);
+	return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
 function sessionMatchesResumeArg(session: SessionInfo, sessionArg: string): boolean {
+	const seqArg = parseSessionNumberArg(sessionArg);
+	if (seqArg !== undefined && session.seq === seqArg) {
+		return true;
+	}
+
 	const normalizedArg = sessionArg.toLowerCase();
 	const normalizedId = session.id.toLowerCase();
 	if (normalizedId.startsWith(normalizedArg)) {

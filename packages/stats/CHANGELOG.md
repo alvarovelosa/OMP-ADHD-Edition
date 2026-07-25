@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Sessions dashboard groups duplicate sessions (identical normalized titles — `#N` prefix stripped — sharing the same `cwd`) into collapsible rows: collapsed by default to the latest attempt with an "(N attempts)" badge and a chevron toggle; expanding reveals all child sessions, indented and dimmed. Sessions with different `cwd`, empty or "Untitled" titles, or single entries render individually. Stable `#N` sequence numbers are now passed through the list API (`seq` field on `SessionListItem`, both server and client types).
+
 ## [17.1.2] - 2026-07-24
 
 ### Added

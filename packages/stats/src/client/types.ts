@@ -137,6 +137,7 @@ export interface SessionListItem {
 	size: number;
 	firstMessage: string;
 	status: SessionStatus;
+	seq?: number;
 	usage?: { requestCount: number; totalTokens: number; totalCost: number };
 }
 

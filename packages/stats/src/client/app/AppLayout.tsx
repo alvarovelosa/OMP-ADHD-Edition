@@ -3,7 +3,8 @@ import type React from "react";
 import { useState } from "react";
 import type { TimeRange } from "../types";
 import { NavRail } from "./NavRail";
-import type { DashboardSection } from "./routes";
+import { type DashboardSection, isStatsSection } from "./routes";
+import { StatsTabStrip } from "./StatsTabStrip";
 import { TopBar } from "./TopBar";
 
 export interface AppLayoutProps {
@@ -85,7 +86,12 @@ export function AppLayout({
 				/>
 
 				<main className="stats-content-area">
-					<div className="stats-content-inner">{children}</div>
+					<div className="stats-content-inner">
+						{isStatsSection(activeSection) && (
+							<StatsTabStrip activeSection={activeSection} onSelect={handleSectionChange} />
+						)}
+						{children}
+					</div>
 				</main>
 			</div>
 		</div>

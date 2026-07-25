@@ -585,10 +585,11 @@ class SessionList implements Component {
 			const cursorWidth = visibleWidth(cursorSymbol);
 			const cursor = isSelected ? theme.fg("accent", cursorSymbol) : padding(cursorWidth);
 			const maxWidth = rowWidth - cursorWidth; // Account for cursor width
+			const seqPrefix = session.seq !== undefined ? `#${session.seq} ` : "";
 
 			if (session.title) {
 				// Has title: show title on first line, dimmed first message on second line
-				const truncatedTitle = truncateToWidth(session.title, maxWidth);
+				const truncatedTitle = truncateToWidth(seqPrefix + session.title, maxWidth);
 				const titleLine = cursor + (isSelected ? theme.bold(truncatedTitle) : truncatedTitle);
 				sessionLines.push(titleLine);
 
@@ -597,7 +598,7 @@ class SessionList implements Component {
 				sessionLines.push(`  ${theme.fg("dim", truncatedPreview)}`);
 			} else {
 				// No title: show first message as main line
-				const truncatedMsg = truncateToWidth(normalizedMessage, maxWidth);
+				const truncatedMsg = truncateToWidth(seqPrefix + normalizedMessage, maxWidth);
 				const messageLine = cursor + (isSelected ? theme.bold(truncatedMsg) : truncatedMsg);
 				sessionLines.push(messageLine);
 			}

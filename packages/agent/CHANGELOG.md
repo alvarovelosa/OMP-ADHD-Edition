@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The compaction short-summary prompt now forbids the model from wrapping its output in `<summary>` or any other XML/HTML tag, preventing the `<summary>…</summary>` context wrapper from leaking into session titles via the `shortSummary` fallback consumed by `sessionDisplayName()`.
+
 ## [17.1.2] - 2026-07-24
 
 ### Added

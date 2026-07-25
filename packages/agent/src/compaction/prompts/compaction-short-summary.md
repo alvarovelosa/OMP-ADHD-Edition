@@ -7,3 +7,4 @@ Rules:
 - NEVER explain what the user asked for
 - MUST write in first person (I added…, I fixed…)
 - NEVER ask questions
+- MUST output plain prose only — NEVER wrap the output in `<summary>` or any other XML/HTML tag, even though the conversation context above may itself be wrapped in tags

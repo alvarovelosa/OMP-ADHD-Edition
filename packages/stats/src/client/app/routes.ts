@@ -98,3 +98,20 @@ export const routes: DashboardRoute[] = [
 		icon: SettingsIcon,
 	},
 ];
+
+export const STATS_SECTIONS: DashboardSection[] = [
+	"overview",
+	"requests",
+	"errors",
+	"models",
+	"providers",
+	"tools",
+	"costs",
+	"behavior",
+	"projects",
+	"gain",
+];
+
+export function isStatsSection(section: DashboardSection): boolean {
+	return (STATS_SECTIONS as string[]).includes(section);
+}

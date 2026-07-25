@@ -1,4 +1,5 @@
-import { type DashboardSection, routes } from "./routes";
+import { BarChart3, History, Settings as SettingsIcon } from "lucide-react";
+import { type DashboardRoute, type DashboardSection, isStatsSection } from "./routes";
 
 export interface NavRailProps {
 	activeSection: DashboardSection;
@@ -7,6 +8,12 @@ export interface NavRailProps {
 }
 
 export function NavRail({ activeSection, onSectionChange, className = "" }: NavRailProps) {
+	const railItems: { id: string; label: string; icon: DashboardRoute["icon"] }[] = [
+		{ id: "sessions", label: "Sessions", icon: History },
+		{ id: "stats", label: "Stats", icon: BarChart3 },
+		{ id: "settings", label: "Settings", icon: SettingsIcon },
+	];
+
 	return (
 		<aside className={`stats-nav-rail ${className}`}>
 			<div className="stats-nav-rail-header">
@@ -17,20 +24,26 @@ export function NavRail({ activeSection, onSectionChange, className = "" }: NavR
 			</div>
 
 			<nav className="stats-nav-rail-menu">
-				{routes.map(route => {
-					const isActive = route.id === activeSection;
-					const Icon = route.icon;
+				{railItems.map(item => {
+					const isActive = item.id === "stats" ? isStatsSection(activeSection) : item.id === activeSection;
+					const Icon = item.icon;
 					return (
 						<button
-							key={route.id}
+							key={item.id}
 							type="button"
-							onClick={() => onSectionChange(route.id)}
+							onClick={
+								item.id === "stats"
+									? () => {
+											if (!isStatsSection(activeSection)) onSectionChange("overview");
+										}
+									: () => onSectionChange(item.id as DashboardSection)
+							}
 							className="stats-nav-rail-item"
 							data-active={isActive ? "true" : "false"}
 							aria-current={isActive ? "page" : undefined}
 						>
 							<Icon size={16} className="stats-nav-rail-item-icon" />
-							<span className="stats-nav-rail-item-label">{route.label}</span>
+							<span className="stats-nav-rail-item-label">{item.label}</span>
 						</button>
 					);
 				})}

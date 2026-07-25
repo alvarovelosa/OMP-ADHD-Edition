@@ -18,6 +18,7 @@ export interface SessionListItem {
 	size: number;
 	firstMessage: string;
 	status: SessionStatus;
+	seq?: number;
 	usage?: { requestCount: number; totalTokens: number; totalCost: number };
 }
 
@@ -62,6 +63,7 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 			size: info.size,
 			firstMessage: info.firstMessage,
 			status: info.status ?? "unknown",
+			seq: info.seq,
 			usage: usage[info.path],
 		}));
 

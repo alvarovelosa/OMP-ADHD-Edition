@@ -3,11 +3,12 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
+import { AgentStorage } from "@oh-my-pi/pi-coding-agent/session/agent-storage";
 import { resolveResumableSession } from "@oh-my-pi/pi-coding-agent/session/session-listing";
 import { computeDefaultSessionDir } from "@oh-my-pi/pi-coding-agent/session/session-paths";
 import { FileSessionStorage } from "@oh-my-pi/pi-coding-agent/session/session-storage";
 import { executeBuiltinSlashCommand } from "@oh-my-pi/pi-coding-agent/slash-commands/builtin-registry";
-import { getConfigRootDir, setAgentDir } from "@oh-my-pi/pi-utils";
+import { getConfigRootDir, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
 
 let tempDir: string;
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -20,13 +21,14 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	AgentStorage.resetInstance();
 	if (originalAgentDir) {
 		setAgentDir(originalAgentDir);
 	} else {
 		setAgentDir(fallbackAgentDir);
 		delete process.env.PI_CODING_AGENT_DIR;
 	}
-	await fs.rm(tempDir, { recursive: true, force: true });
+	await removeWithRetries(tempDir).catch(() => {});
 });
 
 async function writeSession(
