@@ -18,6 +18,8 @@ import {
 	getTotalMessageCount,
 	syncAllSessions,
 } from "./aggregator";
+export type DashboardApiHandler = (req: Request) => Promise<Response>;
+
 import { decodeEmbeddedClientArchive } from "./embedded-client";
 import embeddedClientArchiveTxt from "./embedded-client.generated.txt";
 import { getGainDashboardStats } from "./gain-aggregator";
@@ -300,7 +302,7 @@ async function handleStatic(requestPath: string): Promise<Response> {
 	return new Response("Not Found", { status: 404 });
 }
 
-function createDashboardServer(port: number) {
+function createDashboardServer(port: number, options?: { apiHandler?: DashboardApiHandler }) {
 	const server = Bun.serve({
 		port,
 		async fetch(req) {
@@ -323,7 +325,11 @@ function createDashboardServer(port: number) {
 			try {
 				let response: Response;
 
-				if (path.startsWith("/api/")) {
+				if (path.startsWith("/api/settings/")) {
+					response = options?.apiHandler
+						? await options.apiHandler(req)
+						: new Response("Not Found", { status: 404 });
+				} else if (path.startsWith("/api/")) {
 					response = await handleApi(req);
 				} else {
 					response = await handleStatic(path);
@@ -332,6 +338,9 @@ function createDashboardServer(port: number) {
 				// Add CORS headers to all responses
 				const headers = new Headers(response.headers);
 				for (const key in corsHeaders) {
+					if (path.startsWith("/api/settings/") && key === "Access-Control-Allow-Origin") {
+						continue;
+					}
 					headers.set(key, corsHeaders[key]);
 				}
 
@@ -354,11 +363,14 @@ function createDashboardServer(port: number) {
 /**
  * Start the HTTP server, reusing a live dashboard or reclaiming a stale omp listener.
  */
-export async function startServer(port = 3847): Promise<{ port: number; stop: () => void }> {
+export async function startServer(
+	port = 3847,
+	options?: { apiHandler?: DashboardApiHandler },
+): Promise<{ port: number; stop: () => void }> {
 	await ensureClientBuild();
 
 	try {
-		const server = createDashboardServer(port);
+		const server = createDashboardServer(port, options);
 		return {
 			port: server.port ?? port,
 			stop: () => server.stop(),
@@ -372,7 +384,7 @@ export async function startServer(port = 3847): Promise<{ port: number; stop: ()
 		}
 
 		try {
-			const server = createDashboardServer(port);
+			const server = createDashboardServer(port, options);
 			return {
 				port: server.port ?? port,
 				stop: () => server.stop(),

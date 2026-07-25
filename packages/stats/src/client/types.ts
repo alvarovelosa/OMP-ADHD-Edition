@@ -78,3 +78,48 @@ export interface ModelDashboardStats {
 export interface CostDashboardStats {
 	costSeries: CostTimeSeriesPoint[];
 }
+
+export type SettingTabId =
+	| "appearance"
+	| "model"
+	| "interaction"
+	| "context"
+	| "memory"
+	| "files"
+	| "shell"
+	| "tools"
+	| "tasks"
+	| "providers";
+
+export interface SettingsTabSummary {
+	id: SettingTabId;
+	label: string;
+}
+
+export type SettingsFieldType = "boolean" | "enum" | "submenu" | "text" | "providerLimits";
+
+export interface SettingsFieldOption {
+	value: string;
+	label: string;
+	description?: string;
+}
+
+export interface SettingsField {
+	path: string;
+	label: string;
+	description: string;
+	group?: string;
+	type: SettingsFieldType;
+	value: unknown;
+	defaultValue: unknown;
+	changed: boolean;
+	enumValues?: string[];
+	options?: SettingsFieldOption[];
+}
+
+export interface SettingsTabPayload {
+	id: SettingTabId;
+	label: string;
+	groups: string[];
+	fields: SettingsField[];
+}

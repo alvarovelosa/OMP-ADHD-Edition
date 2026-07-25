@@ -7,6 +7,8 @@
 import { truncateToWidth } from "@oh-my-pi/pi-tui/utils";
 import { APP_NAME, formatDuration, formatNumber, formatPercent } from "@oh-my-pi/pi-utils";
 import chalk from "chalk";
+import { Settings } from "../config/settings";
+import { handleSettingsApiRequest } from "../config/settings-http-api";
 import { openPath } from "../utils/open";
 
 /**
@@ -136,7 +138,8 @@ export async function runStatsCommand(cmd: StatsCommandArgs): Promise<void> {
 	}
 
 	// Start the dashboard server
-	const { port } = await startServer(cmd.port);
+	await Settings.init();
+	const { port } = await startServer(cmd.port, { apiHandler: handleSettingsApiRequest });
 	console.log(chalk.green(`Dashboard available at: http://localhost:${port}`));
 
 	// Open browser

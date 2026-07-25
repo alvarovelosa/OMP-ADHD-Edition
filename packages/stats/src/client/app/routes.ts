@@ -6,6 +6,7 @@ import {
 	Folder,
 	LayoutDashboard,
 	Plug,
+	Settings as SettingsIcon,
 	Smile,
 	TrendingUp,
 	Wrench,
@@ -22,7 +23,8 @@ export type DashboardSection =
 	| "costs"
 	| "behavior"
 	| "projects"
-	| "gain";
+	| "gain"
+	| "settings";
 
 export interface DashboardRoute {
 	id: DashboardSection;
@@ -82,5 +84,10 @@ export const routes: DashboardRoute[] = [
 		id: "gain",
 		label: "Gain",
 		icon: TrendingUp,
+	},
+	{
+		id: "settings",
+		label: "Settings",
+		icon: SettingsIcon,
 	},
 ];

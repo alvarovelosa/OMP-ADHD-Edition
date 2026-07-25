@@ -14,6 +14,7 @@ import chalk from "chalk";
 import { theme } from "../modes/theme/theme";
 import { isTimeoutError, withTimeoutSignal } from "../utils/fetch-timeout";
 
+
 const REPO = "can1357/oh-my-pi";
 const PACKAGE = "@oh-my-pi/pi-coding-agent";
 const HOMEBREW_FORMULA = "can1357/tap/omp";
@@ -615,7 +616,6 @@ function getBinaryName(): string {
 function resolveOmpPath(): string | undefined {
 	return $which(APP_NAME) ?? undefined;
 }
-
 /**
  * Run the resolved omp binary and check if it reports the expected version.
  */

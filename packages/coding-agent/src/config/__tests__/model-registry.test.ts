@@ -143,5 +143,68 @@ describe("ModelRegistry.awaitBackgroundRefresh", () => {
 
 		secondResolve();
 		await registry.awaitBackgroundRefresh();
+import { describe, expect, it } from "bun:test";
+import type { Model } from "@oh-my-pi/pi-ai";
+import type { AuthStorage } from "../../session/auth-storage";
+import { kNoAuth, ModelRegistry } from "../model-registry";
+
+function createMockAuthStorage(keys: Record<string, string> = {}): AuthStorage {
+	return {
+		setFallbackResolver: () => {},
+		clearConfigApiKeys: () => {},
+		hasAuth: (provider: string) => provider in keys,
+		getApiKey: async (provider: string) => keys[provider],
+	} as unknown as AuthStorage;
+}
+
+describe("ModelRegistry", () => {
+	describe("getApiKeyAndHeaders", () => {
+		it("returns ok: true with apiKey and headers when API key exists", async () => {
+			const authStorage = createMockAuthStorage({ openai: "test-openai-key" });
+			const registry = new ModelRegistry(authStorage);
+			const model: Model = {
+				id: "gpt-4o",
+				provider: "openai",
+				name: "GPT-4o",
+				headers: { "X-Custom-Header": "value" },
+			} as unknown as Model;
+
+			const result = await registry.getApiKeyAndHeaders(model);
+			expect(result).toEqual({
+				ok: true,
+				apiKey: "test-openai-key",
+				headers: { "X-Custom-Header": "value" },
+			});
+		});
+
+		it("returns ok: false when no API key is available", async () => {
+			const authStorage = createMockAuthStorage({});
+			const registry = new ModelRegistry(authStorage);
+			const model: Model = {
+				id: "gpt-4o",
+				provider: "openai",
+				name: "GPT-4o",
+			} as unknown as Model;
+
+			const result = await registry.getApiKeyAndHeaders(model);
+			expect(result).toEqual({ ok: false });
+		});
+
+		it("returns ok: true for keyless provider returning kNoAuth", async () => {
+			const authStorage = createMockAuthStorage({});
+			const registry = new ModelRegistry(authStorage);
+			const model: Model = {
+				id: "llama3",
+				provider: "ollama",
+				name: "Llama 3",
+			} as unknown as Model;
+
+			const result = await registry.getApiKeyAndHeaders(model);
+			expect(result).toEqual({
+				ok: true,
+				apiKey: kNoAuth,
+				headers: undefined,
+			});
+		});
 	});
 });

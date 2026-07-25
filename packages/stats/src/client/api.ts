@@ -8,6 +8,9 @@ import type {
 	OverviewStats,
 	ProviderDashboardStats,
 	RequestDetails,
+	SettingsTabPayload,
+	SettingsTabSummary,
+	SettingTabId,
 	TimeRange,
 	ToolDashboardStats,
 } from "./types";
@@ -114,5 +117,29 @@ export async function getProviderDashboardStats(
 ): Promise<ProviderDashboardStats> {
 	return fetchJson<ProviderDashboardStats>(`${API_BASE}/stats/providers?range=${encodeURIComponent(range)}`, {
 		signal,
+export async function getSettingsTabs(signal?: AbortSignal): Promise<SettingsTabSummary[]> {
+	return fetchJson<SettingsTabSummary[]>(`${API_BASE}/settings/tabs`, { signal });
+}
+
+export async function getSettingsTab(tabId: SettingTabId, signal?: AbortSignal): Promise<SettingsTabPayload> {
+	return fetchJson<SettingsTabPayload>(`${API_BASE}/settings/tab/${tabId}`, { signal });
+}
+
+export async function setSettingValue(
+	path: string,
+	value: unknown,
+): Promise<{ path: string; value: unknown; changed: boolean }> {
+	return fetchJson(`${API_BASE}/settings/value`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path, value }),
+	});
+}
+
+export async function resetSettingValue(path: string): Promise<{ path: string; value: unknown; changed: boolean }> {
+	return fetchJson(`${API_BASE}/settings/reset`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path }),
 	});
 }
