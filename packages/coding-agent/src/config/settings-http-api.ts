@@ -1,5 +1,6 @@
 import { getSettingDef, getSettingsForTab } from "../modes/components/settings-defs";
 import { getAvailableThemes } from "../modes/theme/theme";
+import { applyDashboardCors } from "../utils/dashboard-cors";
 import { type SettingPath, type SettingValue, settings, validateProviderMaxInFlightRequests } from "./settings";
 import {
 	getDefault,
@@ -42,22 +43,6 @@ export interface SettingsTabPayload {
 	label: string;
 	groups: readonly string[];
 	fields: SettingsField[];
-}
-
-function applyCorsHeaders(req: Request, response: Response): Response {
-	const origin = req.headers.get("Origin");
-	const host = req.headers.get("Host");
-	if (origin && host) {
-		try {
-			const originUrl = new URL(origin);
-			if (originUrl.host === host) {
-				response.headers.set("Access-Control-Allow-Origin", origin);
-			}
-		} catch {
-			// Ignore invalid origin URL format
-		}
-	}
-	return response;
 }
 
 function isChanged(value: unknown, defaultValue: unknown): boolean {
@@ -237,5 +222,5 @@ export async function handleSettingsApiRequest(req: Request): Promise<Response> 
 		response = new Response("Not Found", { status: 404 });
 	}
 
-	return applyCorsHeaders(req, response);
+	return applyDashboardCors(req, response);
 }

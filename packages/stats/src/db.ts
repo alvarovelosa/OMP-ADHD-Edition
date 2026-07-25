@@ -1700,3 +1700,33 @@ export function getToolTimeSeries(
 		errors: row.errors,
 	}));
 }
+export interface SessionUsageRow {
+	requestCount: number;
+	totalTokens: number;
+	totalCost: number;
+}
+
+export function getSessionUsageBySessionFile(): Record<string, SessionUsageRow> {
+	if (!db) return {};
+	const rows = db
+		.prepare(`
+			SELECT session_file, COUNT(*) as request_count, SUM(total_tokens) as total_tokens, SUM(cost_total) as total_cost
+			FROM messages
+			GROUP BY session_file
+		`)
+		.all() as {
+		session_file: string;
+		request_count: number;
+		total_tokens: number | null;
+		total_cost: number | null;
+	}[];
+	const result: Record<string, SessionUsageRow> = {};
+	for (const row of rows) {
+		result[row.session_file] = {
+			requestCount: row.request_count,
+			totalTokens: row.total_tokens ?? 0,
+			totalCost: row.total_cost ?? 0,
+		};
+	}
+	return result;
+}

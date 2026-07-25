@@ -93,7 +93,7 @@ function formatTimeAgo(date: Date): string {
  * then a timestamp-based label. The raw UUID `id` is intentionally never used —
  * it is unfriendly and indistinguishable from neighboring sessions in the UI.
  */
-function sessionDisplayName(info: SessionInfo): string {
+export function sessionDisplayName(info: SessionInfo): string {
 	const title = sanitizeSessionName(info.title);
 	if (title) return title;
 	const first =

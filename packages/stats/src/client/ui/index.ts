@@ -8,6 +8,8 @@ export * from "./MetricCluster";
 export * from "./Panel";
 export * from "./RequestDrawer";
 export * from "./SegmentedControl";
+export * from "./SessionDrawer";
+export * from "./SessionMessageBlock";
 export * from "./Skeleton";
 export * from "./StatusPill";
 export * from "./TextField";

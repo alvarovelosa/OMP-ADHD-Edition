@@ -4,6 +4,7 @@ import {
 	Coins,
 	Cpu,
 	Folder,
+	History,
 	LayoutDashboard,
 	Plug,
 	Settings as SettingsIcon,
@@ -15,6 +16,7 @@ import type React from "react";
 
 export type DashboardSection =
 	| "overview"
+	| "sessions"
 	| "requests"
 	| "errors"
 	| "models"
@@ -38,6 +40,11 @@ export const routes: DashboardRoute[] = [
 		id: "overview",
 		label: "Overview",
 		icon: LayoutDashboard,
+	},
+	{
+		id: "sessions",
+		label: "Sessions",
+		icon: History,
 	},
 	{
 		id: "requests",

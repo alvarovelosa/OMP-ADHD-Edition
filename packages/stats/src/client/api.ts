@@ -8,6 +8,8 @@ import type {
 	OverviewStats,
 	ProviderDashboardStats,
 	RequestDetails,
+	SessionListItem,
+	SessionMessagesResponse,
 	SettingsTabPayload,
 	SettingsTabSummary,
 	SettingTabId,
@@ -144,5 +146,37 @@ export async function resetSettingValue(path: string): Promise<{ path: string; v
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ path }),
+	});
+}
+export async function getSessionsList(signal?: AbortSignal): Promise<SessionListItem[]> {
+	return fetchJson<SessionListItem[]>(`${API_BASE}/sessions/list`, { signal });
+}
+
+export async function getSessionMessages(
+	sessionPath: string,
+	options: { mode: "recent"; count: number; before?: number } | { mode: "full" },
+	signal?: AbortSignal,
+): Promise<SessionMessagesResponse> {
+	const params = new URLSearchParams({ path: sessionPath, mode: options.mode });
+	if (options.mode === "recent") {
+		params.set("count", String(options.count));
+		if (options.before !== undefined) params.set("before", String(options.before));
+	}
+	return fetchJson<SessionMessagesResponse>(`${API_BASE}/sessions/messages?${params.toString()}`, { signal });
+}
+
+export async function archiveSession(sessionPath: string): Promise<{ path: string; archivedTo: string }> {
+	return fetchJson(`${API_BASE}/sessions/archive`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path: sessionPath }),
+	});
+}
+
+export async function deleteSession(sessionPath: string): Promise<{ path: string; deleted: true }> {
+	return fetchJson(`${API_BASE}/sessions/delete`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path: sessionPath }),
 	});
 }

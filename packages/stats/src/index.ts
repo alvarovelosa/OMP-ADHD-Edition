@@ -8,6 +8,7 @@ import { startServer } from "./server";
 
 export {
 	getDashboardStats,
+	getSessionUsageMap,
 	getToolDashboardStats,
 	getTotalMessageCount,
 	type SyncOptions,
@@ -15,7 +16,7 @@ export {
 	smokeTestSyncWorker,
 	syncAllSessions,
 } from "./aggregator";
-export { closeDb } from "./db";
+export { closeDb, type SessionUsageRow } from "./db";
 export { getGainDashboardStats } from "./gain-aggregator";
 export { type DashboardApiHandler, startServer } from "./server";
 export type {

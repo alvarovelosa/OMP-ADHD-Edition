@@ -91,7 +91,7 @@ interface BlobCandidate {
 	mtimeMs: number;
 }
 
-interface ArchiveCandidate {
+export interface ArchiveCandidate {
 	session: SessionInfo;
 	relativePath: string;
 	destinationPath: string;
@@ -178,7 +178,7 @@ export function collectGcErrors(result: GcResult): string[] {
 	];
 }
 
-function getArchivedSessionsDir(agentDir: string): string {
+export function getArchivedSessionsDir(agentDir: string): string {
 	return path.join(path.dirname(getSessionsDir(agentDir)), "archive", "sessions");
 }
 
@@ -373,7 +373,7 @@ async function hasLiveNestedSessions(session: SessionInfo, archiveBeforeMs: numb
 	return false;
 }
 
-function archiveDestination(
+export function archiveDestination(
 	archiveRoot: string,
 	sessionsRoot: string,
 	session: SessionInfo,
@@ -413,7 +413,7 @@ async function movePath(source: string, destination: string): Promise<void> {
 	await fs.unlink(source);
 }
 
-function sessionArtifactsPath(sessionPath: string): string {
+export function sessionArtifactsPath(sessionPath: string): string {
 	if (sessionPath.endsWith(COMPRESSED_SESSION_SUFFIX)) {
 		return sessionPath.slice(0, -COMPRESSED_SESSION_SUFFIX.length);
 	}
@@ -482,7 +482,7 @@ async function restoreGzipSessionFile(source: string, destination: string): Prom
 	await fs.unlink(source);
 }
 
-async function moveSessionWithArtifacts(candidate: ArchiveCandidate): Promise<void> {
+export async function moveSessionWithArtifacts(candidate: ArchiveCandidate): Promise<void> {
 	const sourceSession = candidate.session.path;
 	const destSession = candidate.destinationPath;
 	const legacyDestSession = destSession.endsWith(".gz") ? destSession.slice(0, -".gz".length) : `${destSession}.gz`;

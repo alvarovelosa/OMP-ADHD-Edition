@@ -12,6 +12,7 @@ import {
 	ProjectsRoute,
 	ProvidersRoute,
 	RequestsRoute,
+	SessionsRoute,
 	SettingsRoute,
 	ToolsRoute,
 } from "./routes";
@@ -55,6 +56,8 @@ export default function App() {
 						onRequestClick={setSelectedRequestId}
 					/>
 				);
+			case "sessions":
+				return <SessionsRoute active={isActive} />;
 			case "requests":
 				return (
 					<RequestsRoute

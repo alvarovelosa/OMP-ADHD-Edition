@@ -1,5 +1,5 @@
 import * as stats from "@oh-my-pi/omp-stats";
-import { handleSettingsApiRequest } from "../../config/settings-http-api";
+import { handleDashboardApiRequest } from "../../config/dashboard-api";
 import * as openUtils from "../../utils/open";
 
 export const DEFAULT_STATS_DASHBOARD_PORT = 3847;
@@ -60,7 +60,7 @@ export async function launchStatsDashboard(args: StatsDashboardArgs): Promise<St
 	let requestedPortIgnored = false;
 
 	if (!activeStatsServer) {
-		activeStatsServer = await stats.startServer(args.port, { apiHandler: handleSettingsApiRequest });
+		activeStatsServer = await stats.startServer(args.port, { apiHandler: handleDashboardApiRequest });
 	} else if (args.port !== activeStatsServer.port) {
 		requestedPortIgnored = true;
 	}

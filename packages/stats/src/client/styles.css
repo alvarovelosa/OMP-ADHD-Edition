@@ -1063,6 +1063,166 @@
   line-height: 1.5;
 }
 
+/* Session Message Block (Easy Reading transcript mode) */
+.stats-message-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.stats-message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.stats-message-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.stats-message-role-badge[data-role="user"] {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+.stats-message-role-badge[data-role="assistant"] {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+
+.stats-message-role-badge[data-role="toolResult"] {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+}
+
+.stats-message-role-badge[data-role="developer"],
+.stats-message-role-badge[data-role="unknown"] {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.stats-message-index {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.stats-message-json-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.stats-message-json-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.stats-message-json-wrapper {
+  padding: 12px;
+  padding-top: 0;
+}
+
+.stats-message-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-message-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stats-message-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.stats-message-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+}
+
+.stats-message-code {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-x: auto;
+}
+
+.stats-message-tool-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.stats-message-tool-card[data-error="true"] {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+
+.stats-message-tool-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.stats-message-tool-card-header:hover {
+  background: var(--border);
+}
+
+.stats-message-tool-card-toggle {
+  color: var(--muted);
+}
+
+.stats-message-tool-card .stats-message-code {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--border);
+}
+
 /* Skeleton Loading Element */
 .stats-skeleton {
   background: var(--surface-2);
@@ -1567,4 +1727,41 @@
 .stats-settings-desc-placeholder {
   color: var(--dim);
   font-style: italic;
+}
+/* Sessions Component Action Buttons */
+.stats-sessions-action-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.stats-sessions-action-btn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--muted);
+}
+
+.stats-sessions-action-btn:focus-visible {
+  border-color: var(--accent);
+}
+
+.stats-sessions-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stats-sessions-delete-btn {
+  color: var(--danger);
+  border-color: var(--border);
+}
+
+.stats-sessions-delete-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--danger);
 }

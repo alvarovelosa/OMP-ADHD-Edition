@@ -15,6 +15,7 @@ import {
 	getOverallStats,
 	getProviderHourlyBurn,
 	getProviderTimeSeries,
+	getSessionUsageBySessionFile,
 	getStatsByAgentType,
 	getStatsByFolder,
 	getStatsByModel,
@@ -28,6 +29,7 @@ import {
 	insertToolCalls,
 	insertUserMessageStats,
 	markSessionBackfillsComplete,
+	type SessionUsageRow,
 	setFileOffset,
 	updateToolResults,
 	updateUserMessageLinks,
@@ -535,4 +537,8 @@ export async function getProviderDashboardStats(range?: string | null): Promise<
 		usageSeries,
 		windowInsights,
 	};
+}
+export async function getSessionUsageMap(): Promise<Record<string, SessionUsageRow>> {
+	await initDb();
+	return getSessionUsageBySessionFile();
 }

@@ -123,3 +123,30 @@ export interface SettingsTabPayload {
 	groups: string[];
 	fields: SettingsField[];
 }
+export type SessionStatus = "complete" | "interrupted" | "aborted" | "error" | "pending" | "unknown";
+
+export interface SessionListItem {
+	path: string;
+	id: string;
+	cwd: string;
+	title: string;
+	parentSessionPath?: string;
+	created: number;
+	modified: number;
+	messageCount: number;
+	size: number;
+	firstMessage: string;
+	status: SessionStatus;
+	usage?: { requestCount: number; totalTokens: number; totalCost: number };
+}
+
+export interface SessionMessageEntry {
+	index: number;
+	message: unknown;
+}
+
+export interface SessionMessagesResponse {
+	messages: SessionMessageEntry[];
+	total: number;
+	hasMore: boolean;
+}

@@ -325,7 +325,7 @@ function createDashboardServer(port: number, options?: { apiHandler?: DashboardA
 			try {
 				let response: Response;
 
-				if (path.startsWith("/api/settings/")) {
+				if (path.startsWith("/api/settings/") || path.startsWith("/api/sessions/")) {
 					response = options?.apiHandler
 						? await options.apiHandler(req)
 						: new Response("Not Found", { status: 404 });
@@ -338,7 +338,10 @@ function createDashboardServer(port: number, options?: { apiHandler?: DashboardA
 				// Add CORS headers to all responses
 				const headers = new Headers(response.headers);
 				for (const key in corsHeaders) {
-					if (path.startsWith("/api/settings/") && key === "Access-Control-Allow-Origin") {
+					if (
+						(path.startsWith("/api/settings/") || path.startsWith("/api/sessions/")) &&
+						key === "Access-Control-Allow-Origin"
+					) {
 						continue;
 					}
 					headers.set(key, corsHeaders[key]);
