@@ -117,6 +117,9 @@ export async function getProviderDashboardStats(
 ): Promise<ProviderDashboardStats> {
 	return fetchJson<ProviderDashboardStats>(`${API_BASE}/stats/providers?range=${encodeURIComponent(range)}`, {
 		signal,
+	});
+}
+
 export async function getSettingsTabs(signal?: AbortSignal): Promise<SettingsTabSummary[]> {
 	return fetchJson<SettingsTabSummary[]>(`${API_BASE}/settings/tabs`, { signal });
 }

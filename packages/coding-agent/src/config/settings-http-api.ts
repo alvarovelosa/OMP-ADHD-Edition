@@ -11,7 +11,7 @@ import {
 	TAB_METADATA,
 } from "./settings-schema";
 
-export type SettingsFieldType = "boolean" | "enum" | "submenu" | "text" | "providerLimits";
+export type SettingsFieldType = "boolean" | "enum" | "multiselect" | "providerLimits" | "submenu" | "text";
 
 export interface SettingsFieldOption {
 	value: string;

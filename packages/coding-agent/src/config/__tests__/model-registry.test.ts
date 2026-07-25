@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, test, vi } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AuthStorage } from "@oh-my-pi/pi-ai";
-import { ModelRegistry } from "../model-registry";
+import type { AuthStorage, Model } from "@oh-my-pi/pi-ai";
+import { kNoAuth, ModelRegistry } from "../model-registry";
 
 /**
  * Stub AuthStorage that satisfies the surface used by ModelRegistry's
@@ -142,12 +142,10 @@ describe("ModelRegistry.awaitBackgroundRefresh", () => {
 		expect(refreshSpy).toHaveBeenCalledTimes(2);
 
 		secondResolve();
+		secondResolve();
 		await registry.awaitBackgroundRefresh();
-import { describe, expect, it } from "bun:test";
-import type { Model } from "@oh-my-pi/pi-ai";
-import type { AuthStorage } from "../../session/auth-storage";
-import { kNoAuth, ModelRegistry } from "../model-registry";
-
+	});
+});
 function createMockAuthStorage(keys: Record<string, string> = {}): AuthStorage {
 	return {
 		setFallbackResolver: () => {},
