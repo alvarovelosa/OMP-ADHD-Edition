@@ -22,6 +22,10 @@
   Fork of <a href="https://github.com/badlogic/pi-mono">Pi</a> by <a href="https://github.com/mariozechner">@mariozechner</a> 
 </p>
 
+> [!NOTE]
+> **OMP (ADHD Edition)** is a customized fork of [oh-my-pi](https://github.com/can1357/oh-my-pi).
+> It includes additional enhancements, such as a full visual **Web Settings Panel** inside the `omp stats` dashboard (`http://localhost:3847/#/settings`).
+
 The most capable agent surface that ships. Continuously tuned by real-world use — complete out of the box, open all the way down.
 
 **40+** providers · **32** built-in tools · **14** lsp ops · **28** dap ops · **~55k** lines of Rust core.
