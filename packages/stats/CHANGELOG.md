@@ -6,7 +6,7 @@
 
 - The settings dashboard now supports hiding individual settings: click the eye icon next to any setting row to toggle its hidden state, use the "Show Hidden" toolbar toggle to view hidden settings, and click "Reset Hidden" to restore all hidden settings.
 
-- Sessions dashboard groups duplicate sessions (identical normalized titles — `#N` prefix stripped — sharing the same `cwd`) into collapsible rows: collapsed by default to the latest attempt with an "(N attempts)" badge and a chevron toggle; expanding reveals all child sessions, indented and dimmed. Sessions with different `cwd`, empty or "Untitled" titles, or single entries render individually. Stable `#N` sequence numbers are now passed through the list API (`seq` field on `SessionListItem`, both server and client types).
+- Sessions dashboard groups duplicate sessions (identical normalized titles — `#N` or `#aN` prefix stripped — sharing the same `cwd`) into collapsible rows: collapsed by default to the latest attempt with an "(N attempts)" badge and a chevron toggle; expanding reveals all child sessions, indented and dimmed. Sessions with different `cwd`, empty or "Untitled" titles, or single entries render individually. Sequence numbers (`#N` for live, `#aN` for archived) are passed through the list API (`seq` field on `SessionListItem`, both server and client types).
 - The sessions dashboard now exposes a "Resume" action on each session row and in the session detail drawer: clicking it POSTs to the coding-agent's `/api/sessions/resume` endpoint, which spawns a visible PowerShell window running `omp -r <sessionId>` in the session's original working directory.
 
 ### Fixed
