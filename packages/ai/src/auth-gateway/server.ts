@@ -12,8 +12,8 @@
  *   GET  /healthz                          → unauth; ok + version
  *   GET  /v1/usage                         → aggregated provider usage (5-min per-credential cache via AuthStorage)
  *   GET  /v1/credentials/check             → per-credential auth probe (diagnose 401s in a multi-account pool)
- *   GET  /v1/models                        → list known models from the registry
- *   POST /v1/chat/completions              → OpenAI chat-completions in/out
+ *   GET  /v1/models (and /models)         → list known models from the registry
+ *   POST /v1/chat/completions (and /chat/completions) → OpenAI chat-completions in/out
  *   POST /v1/messages                      → Anthropic messages in/out
  *   POST /v1/responses                     → OpenAI Responses in/out
  */
@@ -72,6 +72,7 @@ export interface AuthGatewayBootOptions extends AuthGatewayServerOptions {
 
 const FORMAT_ROUTES: Record<string, { module: FormatModule; label: string }> = {
 	"/v1/chat/completions": { module: openaiChat, label: "openai-chat" },
+	"/chat/completions": { module: openaiChat, label: "openai-chat" },
 	"/v1/messages": { module: anthropicMessages, label: "anthropic-messages" },
 	"/v1/responses": { module: openaiResponses, label: "openai-responses" },
 };
@@ -801,7 +802,7 @@ export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServe
 				}
 
 				// Model catalog.
-				if (req.method === "GET" && pathname === "/v1/models") {
+				if (req.method === "GET" && (pathname === "/v1/models" || pathname === "/models")) {
 					return withCors(handleModelsList(opts), req);
 				}
 
