@@ -78,7 +78,7 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 		const groups = new Map<string, SessionListItem[]>();
 		for (const s of raw) {
 			// Skip grouping for untitled / empty-title sessions.
-			const norm = s.title.replace(/^#\d+\s+/, "").trim();
+			const norm = s.title.replace(/^#a?\d+\s+/, "").trim();
 			if (!norm || norm === "Untitled") {
 				groups.set(`__single__${s.path}`, [s]);
 				continue;

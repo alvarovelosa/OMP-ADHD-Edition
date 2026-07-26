@@ -9,7 +9,6 @@ import {
 	parseJsonlLenient,
 	toError,
 } from "@oh-my-pi/pi-utils";
-import { AgentStorage } from "./agent-storage";
 import { computeDefaultSessionDir } from "./session-paths";
 import { FileSessionStorage, type SessionStorage } from "./session-storage";
 
@@ -50,10 +49,10 @@ export interface SessionInfo {
 	 */
 	status?: SessionStatus;
 	/**
-	 * Stable, human-friendly sequence number assigned the first time this session
-	 * is listed (see {@link collectSessionsFromFiles}). Persisted in agent.db,
-	 * never reused, and shown as a `#N` prefix ({@link sessionDisplayName}) so a
-	 * session can be resumed with `--resume <N>` instead of an id prefix.
+	 * Human-friendly sequence rank (1-based, oldest-first) computed when sessions
+	 * are listed (see {@link collectSessionsFromFiles}). Shown as `#N` (live) or
+	 * `#aN` (archived) by {@link sessionDisplayName} so a session can be resumed
+	 * with `--resume <N>` instead of an id prefix.
 	 */
 	seq?: number;
 	/** Whether this session has been archived. Unset or false for active sessions. */
@@ -124,7 +123,8 @@ function formatTimeAgo(date: Date): string {
  * from neighboring sessions in the UI.
  */
 export function sessionDisplayName(info: SessionInfo): string {
-	const prefix = info.seq !== undefined ? `#${info.seq} ` : "";
+	const pfx = info.archived ? "#a" : "#";
+	const prefix = info.seq !== undefined ? `${pfx}${info.seq} ` : "";
 	const title = sanitizeSessionName(info.title);
 	if (title) return prefix + title;
 	const first =
@@ -481,18 +481,11 @@ async function collectSessionsFromFileStride(
 	return sessions;
 }
 
-async function attachSessionSeqNumbers(sessions: SessionInfo[]): Promise<void> {
+export function attachSessionSeqNumbers(sessions: SessionInfo[]): void {
 	if (sessions.length === 0) return;
-	try {
-		const storage = await AgentStorage.open();
-		const oldestFirst = [...sessions].sort((a, b) => a.created.getTime() - b.created.getTime());
-		const seqById = storage.getOrAssignSessionSeqBatch(oldestFirst.map(session => session.id));
-		for (const session of sessions) {
-			const seq = seqById.get(session.id);
-			if (seq !== undefined) session.seq = seq;
-		}
-	} catch (error) {
-		logger.warn("Failed to assign session sequence numbers", { error: toError(error).message });
+	const oldestFirst = [...sessions].sort((a, b) => a.created.getTime() - b.created.getTime());
+	for (let i = 0; i < oldestFirst.length; i++) {
+		oldestFirst[i].seq = i + 1;
 	}
 }
 

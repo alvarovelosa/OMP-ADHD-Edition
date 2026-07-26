@@ -136,7 +136,6 @@ export class AgentStorage {
 	#listModelUsageStmt: Statement;
 	#upsertModelPerfStmt: Statement;
 	#listModelPerfStmt: Statement;
-	#getOrAssignSessionSeqStmt: Statement;
 	#modelUsageCache: string[] | null = null;
 	/** Only the real user db auto-imports stats.db history; custom paths (tests, embedding) opt in explicitly. */
 	#autoPerfBackfill: boolean;
@@ -190,11 +189,6 @@ ON CONFLICT(model_key) DO UPDATE SET
 		this.#listModelPerfStmt = this.#db.prepare(
 			"SELECT model_key, samples, output_tokens, gen_ms, ttft_samples, ttft_ms FROM model_perf",
 		);
-		this.#getOrAssignSessionSeqStmt = this.#db.prepare(
-			`INSERT INTO session_seq (session_id) VALUES (?)
-ON CONFLICT(session_id) DO UPDATE SET session_id = excluded.session_id
-RETURNING seq`,
-		);
 	}
 
 	/**
@@ -231,11 +225,6 @@ CREATE TABLE IF NOT EXISTS meta (
 	value TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS session_seq (
-	seq INTEGER PRIMARY KEY AUTOINCREMENT,
-	session_id TEXT NOT NULL UNIQUE,
-	assigned_at INTEGER NOT NULL DEFAULT (${SQLITE_NOW_EPOCH})
-);
 
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);
 `);
@@ -411,7 +400,6 @@ FROM model_usage_legacy
 		this.#listModelUsageStmt.finalize();
 		this.#upsertModelPerfStmt.finalize();
 		this.#listModelPerfStmt.finalize();
-		this.#getOrAssignSessionSeqStmt.finalize();
 		// SqliteAuthCredentialStore.close() finalizes its own statements and
 		// closes the shared #db handle — must run after our statements finalize.
 		this.#authStore.close();
@@ -531,27 +519,6 @@ FROM model_usage_legacy
 			logger.warn("AgentStorage failed to read model perf", { error: String(error) });
 		}
 		return stats;
-	}
-
-	/**
-	 * Assigns a stable, human-friendly, never-reused sequence number to each
-	 * given session id, or returns the number already assigned. Ids already
-	 * present are returned unchanged; new ids are assigned in array order
-	 * (callers pass ids sorted oldest-first so legacy sessions backfill in a
-	 * sensible historical order). Powers the `#N` session prefix and
-	 * `--resume <N>` lookup in session-listing.ts.
-	 */
-	getOrAssignSessionSeqBatch(sessionIdsOldestFirst: readonly string[]): Map<string, number> {
-		const result = new Map<string, number>();
-		if (sessionIdsOldestFirst.length === 0) return result;
-		const tx = this.#db.transaction((ids: readonly string[]) => {
-			for (const id of ids) {
-				const row = this.#getOrAssignSessionSeqStmt.get(id) as { seq: number } | undefined;
-				if (row) result.set(id, row.seq);
-			}
-		});
-		tx(sessionIdsOldestFirst);
-		return result;
 	}
 
 	/**

@@ -56,7 +56,7 @@ describe("sessions-http-api", () => {
 
 			const found = list.find(s => s.path === testSessionPath);
 			expect(found).toBeDefined();
-			expect(found?.title).toBe("Test Session Title");
+			expect(found?.title).toBe("#1 Test Session Title");
 			expect(found?.messageCount).toBe(2);
 			expect(found?.status).toBeDefined();
 
