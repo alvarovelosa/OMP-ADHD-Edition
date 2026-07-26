@@ -32,6 +32,8 @@ export class Input implements Component, Focusable {
 	prompt = "> ";
 	/** Render the editable value as bullets while retaining the real value internally. */
 	mask = false;
+	/** Dim hint text shown in place of the value when empty (e.g. a valid range or example). */
+	placeholder = "";
 	onSubmit?: (value: string) => void;
 	onEscape?: () => void;
 
@@ -420,12 +422,17 @@ export class Input implements Component, Focusable {
 		let cursorIndex = this.#cursor;
 		// Ensure we always have a grapheme to invert at the cursor (space at end).
 		let visibleValue = this.#value;
+		const usingPlaceholder = this.#value.length === 0 && this.placeholder.length > 0;
 		if (this.mask) {
 			const graphemes = [...segmenter.segment(this.#value)];
 			visibleValue = "•".repeat(graphemes.length);
 			cursorIndex = graphemes.filter(grapheme => grapheme.index < this.#cursor).length;
 		}
-		const displayValue = this.#cursor >= this.#value.length ? `${visibleValue} ` : visibleValue;
+		const displayValue = usingPlaceholder
+			? `${this.placeholder} `
+			: this.#cursor >= this.#value.length
+				? `${visibleValue} `
+				: visibleValue;
 
 		const totalCols = visibleWidth(displayValue);
 		const cursorCols = visibleWidth(displayValue.slice(0, cursorIndex));
@@ -476,7 +483,8 @@ export class Input implements Component, Focusable {
 
 		const visualLength = visibleWidth(renderedNoMarker);
 		const pad = padding(Math.max(0, availableWidth - visualLength));
-		const line = prompt + textWithCursor + pad;
+		const styledText = usingPlaceholder ? `\x1b[2m${textWithCursor}\x1b[22m` : textWithCursor;
+		const line = prompt + styledText + pad;
 		return [line];
 	}
 }

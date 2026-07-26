@@ -113,6 +113,7 @@ export interface SettingsField {
 	value: unknown;
 	defaultValue: unknown;
 	changed: boolean;
+	hidden?: boolean;
 	enumValues?: string[];
 	options?: SettingsFieldOption[];
 }

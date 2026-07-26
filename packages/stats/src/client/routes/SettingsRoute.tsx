@@ -1,5 +1,13 @@
+import { Eye, EyeOff, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ApiError, getSettingsTab, getSettingsTabs, setSettingValue } from "../api";
+import {
+	ApiError,
+	clearHiddenSettings,
+	getSettingsTab,
+	getSettingsTabs,
+	setSettingValue,
+	toggleSettingHidden,
+} from "../api";
 import { SettingRow } from "../components/SettingRow";
 import { SettingsDescriptionBar } from "../components/SettingsDescriptionBar";
 import { SettingsTabStrip } from "../components/SettingsTabStrip";
@@ -15,7 +23,7 @@ export function SettingsRoute({ active }: SettingsRouteProps) {
 	const [activeTabId, setActiveTabId] = useState<SettingTabId | null>(null);
 	const [focusedField, setFocusedField] = useState<SettingsField | null>(null);
 	const [overlay, setOverlay] = useState<Map<string, { value: unknown; changed: boolean }>>(new Map());
-
+	const [showHidden, setShowHidden] = useState(false);
 	const {
 		data: tabs,
 		error: tabsError,
@@ -34,6 +42,7 @@ export function SettingsRoute({ active }: SettingsRouteProps) {
 		data: tabData,
 		error: tabError,
 		loading: tabLoading,
+		refetch: refetchTab,
 	} = useResource(
 		["settings-tab", activeTabId],
 		signal => (activeTabId ? getSettingsTab(activeTabId, signal) : Promise.reject(new Error("No tab selected"))),
@@ -41,7 +50,6 @@ export function SettingsRoute({ active }: SettingsRouteProps) {
 			enabled: active && activeTabId !== null,
 		},
 	);
-
 	const isLoading = tabsLoading || (activeTabId !== null && tabLoading);
 	const combinedError = tabsError
 		? tabsError instanceof ApiError && tabsError.status === 404
@@ -88,6 +96,16 @@ export function SettingsRoute({ active }: SettingsRouteProps) {
 		}
 	};
 
+	const handleToggleHide = async (path: string, hidden: boolean) => {
+		await toggleSettingHidden(path, hidden);
+		refetchTab();
+	};
+
+	const handleClearHidden = async () => {
+		await clearHiddenSettings();
+		refetchTab();
+	};
+
 	const effectiveFields: SettingsField[] = (tabData?.fields ?? []).map(f => {
 		const ov = overlay.get(f.path);
 		if (ov) {
@@ -97,20 +115,42 @@ export function SettingsRoute({ active }: SettingsRouteProps) {
 	});
 
 	const groups = tabData?.groups ?? [];
+	const visibleFields = effectiveFields.filter(f => showHidden || !f.hidden);
 	const groupedFieldsMap = new Map<string | undefined, SettingsField[]>();
-	for (const field of effectiveFields) {
+	for (const field of visibleFields) {
 		const grp = field.group;
 		if (!groupedFieldsMap.has(grp)) {
 			groupedFieldsMap.set(grp, []);
 		}
 		groupedFieldsMap.get(grp)!.push(field);
 	}
-
 	return (
 		<div className="stats-route-container stats-settings-container">
-			{tabs && tabs.length > 0 && activeTabId && (
-				<SettingsTabStrip tabs={tabs} activeTabId={activeTabId} onSelect={handleSelectTab} />
-			)}
+			<div className="stats-settings-toolbar">
+				{tabs && tabs.length > 0 && activeTabId && (
+					<SettingsTabStrip tabs={tabs} activeTabId={activeTabId} onSelect={handleSelectTab} />
+				)}
+				<div className="stats-settings-actions">
+					<button
+						type="button"
+						className={`stats-settings-action-btn ${showHidden ? "is-active" : ""}`}
+						onClick={() => setShowHidden(prev => !prev)}
+						title={showHidden ? "Hide hidden settings" : "Show hidden settings"}
+					>
+						{showHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+						<span>{showHidden ? "Hide Hidden" : "Show Hidden"}</span>
+					</button>
+					<button
+						type="button"
+						className="stats-settings-action-btn"
+						onClick={handleClearHidden}
+						title="Clear all hidden settings"
+					>
+						<RotateCcw size={14} />
+						<span>Reset Hidden</span>
+					</button>
+				</div>
+			</div>
 			<div className="stats-settings-body">
 				<AsyncBoundary
 					loading={isLoading}
@@ -126,6 +166,7 @@ export function SettingsRoute({ active }: SettingsRouteProps) {
 										key={field.path}
 										field={field}
 										onChange={handleFieldChange}
+										onToggleHide={handleToggleHide}
 										onFocus={setFocusedField}
 									/>
 								))}
@@ -142,6 +183,7 @@ export function SettingsRoute({ active }: SettingsRouteProps) {
 											key={field.path}
 											field={field}
 											onChange={handleFieldChange}
+											onToggleHide={handleToggleHide}
 											onFocus={setFocusedField}
 										/>
 									))}

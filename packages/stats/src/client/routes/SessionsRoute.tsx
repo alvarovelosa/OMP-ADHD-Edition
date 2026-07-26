@@ -1,10 +1,19 @@
-import { Archive, ChevronDown, ChevronRight, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { archiveSession, deleteSession, getSessionsList } from "../api";
+import { Archive, ChevronDown, ChevronRight, Play, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { archiveSession, deleteSession, getSessionsList, resumeSession } from "../api";
 import { formatCost, formatInteger, formatRelativeTime } from "../data/formatters";
 import { useResource } from "../data/useResource";
 import type { SessionListItem } from "../types";
-import { AsyncBoundary, DataTable, Panel, SessionDrawer, StatusPill, statusPillVariant, TextField, Toggle } from "../ui";
+import {
+	AsyncBoundary,
+	DataTable,
+	Panel,
+	SessionDrawer,
+	StatusPill,
+	statusPillVariant,
+	TextField,
+	Toggle,
+} from "../ui";
 
 /** Sessions below this count are shown individually (no grouping). */
 const GROUP_THRESHOLD = 2;
@@ -24,6 +33,11 @@ export interface SessionsRouteProps {
 export function SessionsRoute({ active }: SessionsRouteProps) {
 	const [selectedSession, setSelectedSession] = useState<SessionListItem | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
+	const [resumeBusyPaths, setResumeBusyPaths] = useState<Set<string>>(new Set());
+	const [resumeMessage, setResumeMessage] = useState<string | null>(null);
+	const resumeMessageTimer = useRef<number>(0);
+
+	useEffect(() => () => window.clearTimeout(resumeMessageTimer.current), []);
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [includeArchived, setIncludeArchived] = useState(false);
@@ -38,10 +52,14 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 		error,
 		loading,
 		refetch,
-	} = useResource(["sessions-list", debouncedSearch, includeArchived], signal => getSessionsList({ q: debouncedSearch, includeArchived }, signal), {
-		pollMs: 30000,
-		enabled: active,
-	});
+	} = useResource(
+		["sessions-list", debouncedSearch, includeArchived],
+		signal => getSessionsList({ q: debouncedSearch, includeArchived }, signal),
+		{
+			pollMs: 30000,
+			enabled: active,
+		},
+	);
 	const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
 	const toggleGroup = (key: string) => {
@@ -108,6 +126,26 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 
 		return { displaySessions, sessionGroupMeta };
 	}, [sessions, expandedGroups]);
+
+	const handleResumeSession = async (e: React.MouseEvent, item: SessionListItem) => {
+		e.stopPropagation();
+		setActionError(null);
+		setResumeBusyPaths(prev => new Set(prev).add(item.path));
+		try {
+			await resumeSession(item.path);
+			setResumeMessage(`Launched session ${item.path} in a new terminal window.`);
+			window.clearTimeout(resumeMessageTimer.current);
+			resumeMessageTimer.current = window.setTimeout(() => setResumeMessage(null), 4000);
+		} catch (err) {
+			setActionError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setResumeBusyPaths(prev => {
+				const next = new Set(prev);
+				next.delete(item.path);
+				return next;
+			});
+		}
+	};
 
 	const handleArchiveSession = async (e: React.MouseEvent, item: SessionListItem) => {
 		e.stopPropagation();
@@ -236,6 +274,22 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 				className: "stats-text-right",
 				render: (item: SessionListItem) => (
 					<div style={{ display: "inline-flex", gap: "6px" }} onClick={e => e.stopPropagation()}>
+						<button
+							type="button"
+							onClick={e => handleResumeSession(e, item)}
+							disabled={resumeBusyPaths.has(item.path)}
+							className="stats-sessions-action-btn"
+							title="Resume session"
+							style={{
+								padding: "3px 6px",
+								fontSize: "12px",
+								display: "inline-flex",
+								alignItems: "center",
+								gap: "3px",
+							}}
+						>
+							<Play size={13} /> {resumeBusyPaths.has(item.path) ? "Launching…" : "Resume"}
+						</button>
 						{!item.archived && (
 							<button
 								type="button"
@@ -306,6 +360,15 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 				style={{ marginTop: "8px", display: "flex", justifyContent: "flex-end", gap: "8px" }}
 				onClick={e => e.stopPropagation()}
 			>
+				<button
+					type="button"
+					onClick={e => handleResumeSession(e, item)}
+					disabled={resumeBusyPaths.has(item.path)}
+					className="stats-sessions-action-btn"
+					style={{ padding: "3px 8px", fontSize: "12px" }}
+				>
+					{resumeBusyPaths.has(item.path) ? "Launching…" : "Resume"}
+				</button>
 				{!item.archived && (
 					<button
 						type="button"
@@ -336,13 +399,32 @@ export function SessionsRoute({ active }: SessionsRouteProps) {
 					<p className="stats-drawer-error-message">{actionError}</p>
 				</div>
 			)}
+			{resumeMessage && (
+				<div className="stats-drawer-success" style={{ marginBottom: "12px" }}>
+					<p className="stats-drawer-success-title">Terminal launched</p>
+					<p className="stats-drawer-success-message">{resumeMessage}</p>
+				</div>
+			)}
 			<Panel
 				title="Sessions"
 				subtitle="Browse, view transcript, archive, or delete OMP sessions"
 				actions={
 					<div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-						<TextField value={search} onChange={setSearch} placeholder="Search sessions…" icon={<Search size={14} />} />
-						<label style={{ display: "inline-flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px" }}>
+						<TextField
+							value={search}
+							onChange={setSearch}
+							placeholder="Search sessions…"
+							icon={<Search size={14} />}
+						/>
+						<label
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								gap: "8px",
+								cursor: "pointer",
+								fontSize: "13px",
+							}}
+						>
 							<Toggle checked={includeArchived} onChange={setIncludeArchived} />
 							<span>Show archived</span>
 						</label>

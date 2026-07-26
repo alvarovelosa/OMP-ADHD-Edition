@@ -124,3 +124,58 @@ export function openPath(urlOrPath: string): void {
 		},
 	);
 }
+/**
+ * Spawns a visible, interactive PowerShell terminal window running a command in `cwd`.
+ * The window stays open after the command finishes (`-NoExit`).
+ * On non-Windows platforms, logs a warning as terminal launch is Windows-only.
+ */
+export async function openTerminalCommand(command: string, args: string[], cwd: string): Promise<void> {
+	if (process.platform !== "win32") {
+		logger.warn("Terminal execution is only supported on Windows", { platform: process.platform });
+		return;
+	}
+
+	const systemRoot = process.env.SystemRoot?.trim() || process.env.SYSTEMROOT?.trim() || "C:\\Windows";
+	const absolute = path.win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+	const powershell = fs.existsSync(absolute) ? absolute : "powershell.exe";
+
+	const formattedArgs = args.map(a => `'${a.replaceAll("'", "''")}'`).join(" ");
+	const innerScript =
+		`Set-Location -LiteralPath '${cwd.replaceAll("'", "''")}'; & '${command.replaceAll("'", "''")}' ${formattedArgs}`.trim();
+	const innerEncoded = Buffer.from(innerScript, "utf16le").toString("base64");
+
+	// Bun.spawn (like Node's child_process) never allocates a new console for the child on
+	// Windows — with no console to attach to, `-NoExit` is moot and the process just runs and
+	// exits headlessly. Routing through `Start-Process` makes Windows allocate a real console
+	// window for the inner PowerShell, so it stays open as an interactive terminal.
+	const startArgList = ["-NoExit", "-EncodedCommand", innerEncoded].map(a => `'${a.replaceAll("'", "''")}'`).join(",");
+	const outerScript =
+		`Start-Process -FilePath '${powershell.replaceAll("'", "''")}' -WindowStyle Normal -ArgumentList ${startArgList} -WorkingDirectory '${cwd.replaceAll("'", "''")}'`.trim();
+	const outerEncoded = Buffer.from(outerScript, "utf16le").toString("base64");
+
+	try {
+		const proc = Bun.spawn(
+			[powershell, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", outerEncoded],
+			{
+				cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+				windowsHide: true,
+			},
+		);
+		const exitCode = await proc.exited;
+		if (exitCode !== 0) {
+			const stderr = (await new Response(proc.stderr).text()).trim();
+			const stdout = (await new Response(proc.stdout).text()).trim();
+			const detail = stderr || stdout || `Process exited with code ${exitCode}`;
+			logger.warn("Failed to spawn terminal command", { command, cwd, exitCode, detail });
+			throw new Error(`Failed to launch terminal (${exitCode}): ${detail}`);
+		}
+	} catch (error) {
+		logger.warn("Failed to spawn terminal command", {
+			command,
+			cwd,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw error;
+	}
+}

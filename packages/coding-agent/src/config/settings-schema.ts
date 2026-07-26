@@ -179,6 +179,38 @@ export type StatusLineSegmentId =
 	| "usage"
 	| "collab";
 
+/** Human-readable labels for status line segment ids, used by the custom segment editor. */
+export const STATUS_LINE_SEGMENT_OPTIONS: ReadonlyArray<{
+	value: StatusLineSegmentId;
+	label: string;
+	description?: string;
+}> = [
+	{ value: "pi", label: "Pi", description: "Static branding glyph" },
+	{ value: "model", label: "Model", description: "Active model name" },
+	{ value: "mode", label: "Mode", description: "Current editing/agent mode" },
+	{ value: "path", label: "Path", description: "Working directory path" },
+	{ value: "git", label: "Git", description: "Git branch and status" },
+	{ value: "pr", label: "PR", description: "Active pull request info" },
+	{ value: "subagents", label: "Subagents", description: "Running subagent count" },
+	{ value: "token_in", label: "Tokens In", description: "Input token count" },
+	{ value: "token_out", label: "Tokens Out", description: "Output token count" },
+	{ value: "token_total", label: "Tokens Total", description: "Total token count" },
+	{ value: "token_rate", label: "Token Rate", description: "Tokens per second" },
+	{ value: "cost", label: "Cost", description: "Session cost estimate" },
+	{ value: "context_pct", label: "Context %", description: "Context window usage percentage" },
+	{ value: "context_total", label: "Context Total", description: "Context window token usage" },
+	{ value: "time_spent", label: "Time Spent", description: "Elapsed session time" },
+	{ value: "time", label: "Time", description: "Current wall-clock time" },
+	{ value: "session", label: "Session", description: "Session id" },
+	{ value: "hostname", label: "Hostname", description: "Machine hostname" },
+	{ value: "cache_read", label: "Cache Read", description: "Cache read token count" },
+	{ value: "cache_write", label: "Cache Write", description: "Cache write token count" },
+	{ value: "cache_hit", label: "Cache Hit %", description: "Cache hit rate" },
+	{ value: "session_name", label: "Session Name", description: "Session display name" },
+	{ value: "usage", label: "Usage", description: "Provider usage summary" },
+	{ value: "collab", label: "Collab", description: "Collaboration status" },
+];
+
 /** Submenu choice metadata. */
 export type SubmenuOption<V extends string = string> = {
 	value: V;
@@ -204,8 +236,10 @@ interface UiEnum<T extends readonly string[]> extends UiBase {
 }
 
 interface UiNumber extends UiBase {
-	/** Submenu options. Without options, a numeric setting has no UI representation (intentional hide). */
+	/** Submenu options. Without options, a numeric setting renders as free-form numeric text entry. */
 	options?: ReadonlyArray<SubmenuOption>;
+	/** Grayed-out hint shown inside the empty text input (e.g. a valid range or example value). */
+	placeholder?: string;
 }
 
 interface UiString extends UiBase {
@@ -232,6 +266,7 @@ export type AnyUiMetadata = UiBase & {
 	options?: ReadonlyArray<SubmenuOption> | "runtime";
 	secret?: boolean;
 	ordered?: boolean;
+	placeholder?: string;
 };
 
 interface BooleanDef {
@@ -379,6 +414,11 @@ export const SETTINGS_SCHEMA = {
 	// per-machine overrides remain trivial.
 	"auth.broker.url": { type: "string", default: undefined },
 	"auth.broker.token": { type: "string", default: undefined },
+
+	// Settings the user has hidden from the settings UI via F2 in the settings
+	// selector. Not itself shown in the UI (no `ui` block) - revealed with F3,
+	// cleared with F4. See settings-selector.ts for the hide/reveal/reset flow.
+	"settings.hiddenPaths": { type: "array", default: EMPTY_STRING_ARRAY },
 
 	autoResume: {
 		type: "boolean",
@@ -806,9 +846,33 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
-	"statusLine.leftSegments": { type: "array", default: [] as StatusLineSegmentId[] },
+	"statusLine.leftSegments": {
+		type: "array",
+		default: [] as StatusLineSegmentId[],
+		ui: {
+			tab: "appearance",
+			group: "Status Line",
+			label: "Left Segments",
+			description: "Segments shown on the left side of a custom status line, in order",
+			condition: "customStatusLinePreset",
+			ordered: true,
+			options: STATUS_LINE_SEGMENT_OPTIONS,
+		},
+	},
 
-	"statusLine.rightSegments": { type: "array", default: [] as StatusLineSegmentId[] },
+	"statusLine.rightSegments": {
+		type: "array",
+		default: [] as StatusLineSegmentId[],
+		ui: {
+			tab: "appearance",
+			group: "Status Line",
+			label: "Right Segments",
+			description: "Segments shown on the right side of a custom status line, in order",
+			condition: "customStatusLinePreset",
+			ordered: true,
+			options: STATUS_LINE_SEGMENT_OPTIONS,
+		},
+	},
 
 	"statusLine.segmentOptions": { type: "record", default: {} as Record<string, unknown> },
 
@@ -1261,14 +1325,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Sampling",
 			label: "Temperature",
 			description: "Sampling temperature (0 = deterministic, 1 = creative, -1 = provider default)",
-			options: [
-				{ value: "-1", label: "Default", description: "Use provider default" },
-				{ value: "0", label: "0", description: "Deterministic" },
-				{ value: "0.2", label: "0.2", description: "Focused" },
-				{ value: "0.5", label: "0.5", description: "Balanced" },
-				{ value: "0.7", label: "0.7", description: "Creative" },
-				{ value: "1", label: "1", description: "Maximum variety" },
-			],
+			placeholder: "e.g. 0-2, -1 = default",
 		},
 	},
 
@@ -1280,14 +1337,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Sampling",
 			label: "Top P",
 			description: "Nucleus sampling cutoff (0-1, -1 = provider default)",
-			options: [
-				{ value: "-1", label: "Default", description: "Use provider default" },
-				{ value: "0.1", label: "0.1", description: "Very focused" },
-				{ value: "0.3", label: "0.3", description: "Focused" },
-				{ value: "0.5", label: "0.5", description: "Balanced" },
-				{ value: "0.9", label: "0.9", description: "Broad" },
-				{ value: "1", label: "1", description: "No nucleus filtering" },
-			],
+			placeholder: "e.g. 0-1, -1 = default",
 		},
 	},
 
@@ -1299,13 +1349,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Sampling",
 			label: "Top K",
 			description: "Sample from top-K tokens (-1 = provider default)",
-			options: [
-				{ value: "-1", label: "Default", description: "Use provider default" },
-				{ value: "1", label: "1", description: "Greedy top token" },
-				{ value: "20", label: "20", description: "Focused" },
-				{ value: "40", label: "40", description: "Balanced" },
-				{ value: "100", label: "100", description: "Broad" },
-			],
+			placeholder: "e.g. 1-100, -1 = default",
 		},
 	},
 
@@ -1317,12 +1361,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Sampling",
 			label: "Min P",
 			description: "Minimum probability threshold (0-1, -1 = provider default)",
-			options: [
-				{ value: "-1", label: "Default", description: "Use provider default" },
-				{ value: "0.01", label: "0.01", description: "Very permissive" },
-				{ value: "0.05", label: "0.05", description: "Balanced" },
-				{ value: "0.1", label: "0.1", description: "Strict" },
-			],
+			placeholder: "e.g. 0-1, -1 = default",
 		},
 	},
 
@@ -1334,13 +1373,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Sampling",
 			label: "Presence Penalty",
 			description: "Penalty for introducing already-present tokens (-1 = provider default)",
-			options: [
-				{ value: "-1", label: "Default", description: "Use provider default" },
-				{ value: "0", label: "0", description: "No penalty" },
-				{ value: "0.5", label: "0.5", description: "Mild novelty" },
-				{ value: "1", label: "1", description: "Encourage novelty" },
-				{ value: "2", label: "2", description: "Strong novelty" },
-			],
+			placeholder: "e.g. -2 to 2, -1 = default",
 		},
 	},
 
@@ -1352,14 +1385,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Sampling",
 			label: "Repetition Penalty",
 			description: "Penalty for repeated tokens (-1 = provider default)",
-			options: [
-				{ value: "-1", label: "Default", description: "Use provider default" },
-				{ value: "0.8", label: "0.8", description: "Allow repetition" },
-				{ value: "1", label: "1", description: "No penalty" },
-				{ value: "1.1", label: "1.1", description: "Mild penalty" },
-				{ value: "1.2", label: "1.2", description: "Balanced" },
-				{ value: "1.5", label: "1.5", description: "Strong penalty" },
-			],
+			placeholder: "e.g. 0.1-2, -1 = default",
 		},
 	},
 

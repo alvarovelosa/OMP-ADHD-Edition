@@ -67,6 +67,7 @@ export interface SubmenuSettingDef extends BaseSettingDef {
 export interface TextInputSettingDef extends BaseSettingDef {
 	type: "text";
 	secret: boolean;
+	placeholder?: string;
 }
 
 export interface ProviderLimitsSettingDef extends BaseSettingDef {
@@ -136,6 +137,13 @@ const CONDITIONS: Record<string, () => boolean> = {
 			return false;
 		}
 	},
+	customStatusLinePreset: () => {
+		try {
+			return Settings.instance.get("statusLine.preset") === "custom";
+		} catch {
+			return false;
+		}
+	},
 	planModeEnabled: () => {
 		try {
 			return Settings.instance.get("plan.enabled");
@@ -179,9 +187,11 @@ function pathToSettingDef(path: SettingPath): SettingDef | null {
 	}
 
 	if (schemaType === "number") {
-		// Numbers without options are intentionally hidden from the UI.
-		if (!options || options === "runtime") return null;
-		return { ...base, type: "submenu", options };
+		if (options && options !== "runtime") {
+			return { ...base, type: "submenu", options };
+		}
+		// Numbers without curated options are free-form numeric text entry.
+		return { ...base, type: "text", secret: false, placeholder: ui.placeholder };
 	}
 
 	if (schemaType === "string") {
@@ -192,7 +202,7 @@ function pathToSettingDef(path: SettingPath): SettingDef | null {
 		if (options) {
 			return { ...base, type: "submenu", options };
 		}
-		return { ...base, type: "text", secret: ui.secret === true };
+		return { ...base, type: "text", secret: ui.secret === true, placeholder: ui.placeholder };
 	}
 
 	if (schemaType === "array") {

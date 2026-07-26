@@ -29,6 +29,7 @@ export interface SettingsField {
 	value: unknown;
 	defaultValue: unknown;
 	changed: boolean;
+	hidden?: boolean;
 	enumValues?: readonly string[];
 	options?: readonly SettingsFieldOption[];
 }
@@ -72,10 +73,12 @@ export async function handleSettingsApiRequest(req: Request): Promise<Response> 
 			const defs = getSettingsForTab(tabId).filter(def => !def.condition || def.condition());
 			const availableThemes = tabId === "appearance" ? await getAvailableThemes() : [];
 
+			const hiddenPaths = settings.get("settings.hiddenPaths");
 			const fields: SettingsField[] = defs.map(def => {
 				const val = settings.get(def.path as SettingPath);
 				const defaultVal = getDefault(def.path as SettingPath);
 				const changed = isChanged(val, defaultVal);
+				const hidden = hiddenPaths.includes(def.path);
 
 				let options: readonly SettingsFieldOption[] | undefined;
 				if (def.path === "theme.dark" || def.path === "theme.light") {
@@ -93,8 +96,8 @@ export async function handleSettingsApiRequest(req: Request): Promise<Response> 
 					value: val,
 					defaultValue: defaultVal,
 					changed,
+					hidden,
 				};
-
 				if (def.type === "enum") {
 					field.enumValues = def.values;
 				}
@@ -138,6 +141,21 @@ export async function handleSettingsApiRequest(req: Request): Promise<Response> 
 						validationError = "Invalid boolean value";
 					}
 				} else if (schemaType === "number") {
+					// Free-form numeric text inputs (e.g. sampling temperature/topP/topK)
+					// submit strings from the dashboard's TextField. Coerce here so the
+					// dashboard can post the same way the TUI's `#setSettingValue` does:
+					// empty string restores the default, a non-finite value surfaces a 400.
+					if (typeof valueToSet === "string") {
+						const trimmed = valueToSet.trim();
+						if (trimmed === "") {
+							valueToSet = getDefault(def.path as SettingPath);
+						} else {
+							const parsed = Number(trimmed);
+							if (Number.isFinite(parsed)) {
+								valueToSet = parsed;
+							}
+						}
+					}
 					if (typeof valueToSet !== "number" || !Number.isFinite(valueToSet)) {
 						validationError = "Invalid number value";
 					} else if (def.type === "submenu" && def.options) {
@@ -218,6 +236,32 @@ export async function handleSettingsApiRequest(req: Request): Promise<Response> 
 				});
 			}
 		}
+	} else if (req.method === "POST" && pathname === "/api/settings/toggle-hide") {
+		let body: { path?: string; hidden?: boolean };
+		try {
+			body = (await req.json()) as { path?: string; hidden?: boolean };
+		} catch {
+			body = {};
+		}
+
+		const pathStr = body.path;
+		if (!pathStr || typeof pathStr !== "string") {
+			response = Response.json({ error: "Missing setting path" }, { status: 400 });
+		} else {
+			const hiddenPaths = settings.get("settings.hiddenPaths");
+			const isHidden = hiddenPaths.includes(pathStr);
+			const shouldHide = body.hidden !== undefined ? body.hidden : !isHidden;
+			const next = shouldHide
+				? isHidden
+					? hiddenPaths
+					: [...hiddenPaths, pathStr]
+				: hiddenPaths.filter(p => p !== pathStr);
+			settings.set("settings.hiddenPaths", next);
+			response = Response.json({ path: pathStr, hidden: shouldHide, hiddenPaths: next });
+		}
+	} else if (req.method === "POST" && pathname === "/api/settings/clear-hidden") {
+		settings.set("settings.hiddenPaths", []);
+		response = Response.json({ hiddenPaths: [] });
 	} else {
 		response = new Response("Not Found", { status: 404 });
 	}

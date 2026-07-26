@@ -66,6 +66,7 @@ class TextInputSubmenu extends Container {
 		description: string,
 		currentValue: string,
 		secret: boolean,
+		placeholder: string | undefined,
 		private readonly onSubmit: (value: string) => void,
 		private readonly onCancel: () => void,
 	) {
@@ -80,6 +81,9 @@ class TextInputSubmenu extends Container {
 
 		this.#input = new Input();
 		this.#input.mask = secret;
+		if (placeholder) {
+			this.#input.placeholder = placeholder;
+		}
 		if (currentValue) {
 			this.#input.setValue(currentValue);
 		}
@@ -421,6 +425,7 @@ class ProviderLimitsSubmenu extends Container {
 				"Enter a positive number. Decimals round down. Clear the field to make this provider unlimited.",
 				limits[provider]?.toString() ?? "",
 				false,
+				undefined,
 				value => {
 					const next = { ...limits };
 					const trimmed = value.trim();
@@ -552,6 +557,10 @@ export class SettingsSelectorComponent implements Component {
 	#searchFirstMatch = new Map<string, string>();
 	#textInputActive = false;
 	#hasSectionJump = false;
+	/** Whether hidden settings are currently shown (toggled with F3). */
+	#showHidden = false;
+	/** Definitions for the tab currently on screen, for hide/reset lookups by selected item id. */
+	#currentTabDefs: SettingDef[] = [];
 	// Frame geometry from the last render, for mouse hit-testing (the
 	// fullscreen overlay paints from screen row 0, so mouse rows map 1:1).
 	#tabRowStart = 0;
@@ -615,11 +624,16 @@ export class SettingsSelectorComponent implements Component {
 		if (this.#currentTabId === "plugins") {
 			return "Tab to switch tabs · Esc to close";
 		}
+		const hiddenHint = this.#showHidden
+			? "F2 hide · F3 hide unhidden"
+			: settings.get("settings.hiddenPaths").length > 0
+				? "F2 hide · F3 show hidden · F4 clear hidden"
+				: "F2 hide";
 		if (this.#currentList?.sectionFocused) {
-			return "↑/↓ to jump sections · Tab/Enter to settings · ←/→ to switch tabs · Esc to close";
+			return `↑/↓ to jump sections · Tab/Enter to settings · ←/→ to switch tabs · ${hiddenHint} · Esc to close`;
 		}
 		const nav = this.#hasSectionJump ? "Tab to jump sections · ←/→ to switch tabs" : "Tab to switch tabs";
-		return `Enter/Space to change · ${nav} · Type to search · Esc to close`;
+		return `Enter/Space to change · ${nav} · Type to search · ${hiddenHint} · Esc to close`;
 	}
 
 	/** Single-line search banner: accent icon, editable query with live cursor, right-aligned match count. */
@@ -1138,6 +1152,7 @@ export class SettingsSelectorComponent implements Component {
 			def.description,
 			this.#formatTextInputEditValue(def.path, settings.get(def.path)),
 			def.secret,
+			def.placeholder,
 			value => {
 				// Empty string clears the setting; undefined-typed string settings
 				// store "" which the browser.ts expandPath ignores (no-op fallback).
@@ -1230,7 +1245,16 @@ export class SettingsSelectorComponent implements Component {
 			}
 			settings.set(path, parsed as never);
 		} else if (typeof currentValue === "number") {
-			settings.set(path, Number(value) as never);
+			const trimmed = value.trim();
+			if (trimmed === "") {
+				settings.set(path, getDefault(path) as never);
+				return;
+			}
+			const parsed = Number(trimmed);
+			if (!Number.isFinite(parsed)) {
+				throw new Error(`Enter a valid number (got "${value}")`);
+			}
+			settings.set(path, parsed as never);
 		} else if (typeof currentValue === "boolean") {
 			settings.set(path, (value === "true") as never);
 		} else {
@@ -1243,6 +1267,7 @@ export class SettingsSelectorComponent implements Component {
 	 */
 	#showSettingsTab(tabId: SettingTab): void {
 		const defs = getSettingsForTab(tabId);
+		this.#currentTabDefs = defs;
 
 		const items = this.#buildItemsForDefs(defs);
 		// Mirror SettingsList's section detection (leading ungrouped items form
@@ -1278,7 +1303,7 @@ export class SettingsSelectorComponent implements Component {
 				// definition-to-item mapping so condition-gated settings (e.g. the
 				// Hindsight cluster guarded by memory.backend) appear/disappear
 				// immediately instead of waiting for the next tab switch.
-				this.#refreshCurrentTabItems(defs);
+				this.#refreshCurrentTabItems();
 			},
 			() => this.callbacks.onCancel(),
 			// The selector owns type-to-search and the footer hint; pin the
@@ -1291,26 +1316,58 @@ export class SettingsSelectorComponent implements Component {
 	 * Map a definition list to UI items, dropping any whose condition is false.
 	 * Inserts a heading row whenever the (group-sorted) definition list crosses
 	 * into a new group; groups whose items are all condition-hidden emit none.
+	 * User-hidden settings (F2) are dropped unless {@link #showHidden} is on,
+	 * in which case they're kept and flagged with a "hidden" hint.
 	 */
 	#buildItemsForDefs(defs: SettingDef[]): SettingItem[] {
+		const hiddenPaths = settings.get("settings.hiddenPaths");
 		const items: SettingItem[] = [];
 		let lastGroup: string | undefined;
 		for (const def of defs) {
+			const isHidden = hiddenPaths.includes(def.path);
+			if (isHidden && !this.#showHidden) continue;
 			const item = this.#defToItem(def);
 			if (!item) continue;
 			if (def.group && def.group !== lastGroup) {
 				items.push({ id: `__heading:${def.group}`, label: def.group, currentValue: "", heading: true });
 				lastGroup = def.group;
 			}
-			items.push(item);
+			items.push(
+				isHidden ? { ...item, description: item.description ? `hidden · ${item.description}` : "hidden" } : item,
+			);
 		}
 		return items;
 	}
 
-	/** Re-evaluate condition gates against the current settings and refresh the active list. */
-	#refreshCurrentTabItems(defs: SettingDef[]): void {
+	/** Re-evaluate condition/hidden gates against the current settings and refresh the active list. */
+	#refreshCurrentTabItems(): void {
 		if (this.#currentTabId === "plugins" || !this.#currentList) return;
-		this.#currentList.setItems(this.#buildItemsForDefs(defs));
+		this.#currentList.setItems(this.#buildItemsForDefs(this.#currentTabDefs));
+	}
+
+	/** Toggle the F2 hidden flag on the currently selected setting, then refresh the list. */
+	#toggleHiddenSelected(): void {
+		if (this.#currentTabId === "plugins" || !this.#currentList) return;
+		const item = this.#currentList.getSelectedItem();
+		if (!item || item.heading) return;
+		const path = item.id as SettingPath;
+		const hidden = settings.get("settings.hiddenPaths");
+		const next = hidden.includes(path) ? hidden.filter(p => p !== path) : [...hidden, path];
+		settings.set("settings.hiddenPaths", next);
+		this.#refreshCurrentTabItems();
+	}
+
+	/** F3: toggle whether hidden settings are shown (with a "hidden" hint) or fully dropped. */
+	#toggleShowHidden(): void {
+		this.#showHidden = !this.#showHidden;
+		this.#refreshCurrentTabItems();
+	}
+
+	/** F4: clear every hidden setting, restoring the full list. */
+	#clearHiddenPaths(): void {
+		if (settings.get("settings.hiddenPaths").length === 0) return;
+		settings.set("settings.hiddenPaths", []);
+		this.#refreshCurrentTabItems();
 	}
 
 	/**
@@ -1370,6 +1427,23 @@ export class SettingsSelectorComponent implements Component {
 		if (this.#searchList) {
 			this.#handleSearchModeInput(data, this.#searchList);
 			return;
+		}
+
+		// F2 hides/unhides the selected setting; F3 toggles showing hidden
+		// settings (with a "hidden" hint); F4 clears every hidden setting.
+		if (this.#currentTabId !== "plugins") {
+			if (matchesKey(data, "f2")) {
+				this.#toggleHiddenSelected();
+				return;
+			}
+			if (matchesKey(data, "f3")) {
+				this.#toggleShowHidden();
+				return;
+			}
+			if (matchesKey(data, "f4")) {
+				this.#clearHiddenPaths();
+				return;
+			}
 		}
 
 		// Tab toggles keyboard focus between section headings and setting rows

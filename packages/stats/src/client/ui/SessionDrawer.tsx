@@ -1,7 +1,7 @@
-import { Archive, Clock, Coins, FileText, Folder, HardDrive, Hash, Trash2, X } from "lucide-react";
+import { Archive, Clock, Coins, FileText, Folder, HardDrive, Hash, Play, Trash2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { archiveSession, deleteSession, getSessionMessages } from "../api";
+import { archiveSession, deleteSession, getSessionMessages, resumeSession } from "../api";
 import { formatBytes, formatCost, formatInteger, formatRelativeTime } from "../data/formatters";
 import type { SessionListItem, SessionMessageEntry, SessionStatus } from "../types";
 import { JsonBlock } from "./JsonBlock";
@@ -44,6 +44,11 @@ export function SessionDrawer({ session, onClose, onArchived, onDeleted }: Sessi
 	const [error, setError] = useState<string | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [actionBusy, setActionBusy] = useState(false);
+	const [resumeInFlight, setResumeInFlight] = useState(false);
+	const [resumeMessage, setResumeMessage] = useState<string | null>(null);
+	const resumeMessageTimer = useRef<number>(0);
+
+	useEffect(() => () => window.clearTimeout(resumeMessageTimer.current), []);
 	const [viewMode, setViewMode] = useState<"easy" | "json">("easy");
 	const [hideTools, setHideTools] = useState(false);
 
@@ -150,6 +155,25 @@ export function SessionDrawer({ session, onClose, onArchived, onDeleted }: Sessi
 		}
 	};
 
+	const handleResume = async () => {
+		if (actionBusy) return;
+		setActionBusy(true);
+		setResumeInFlight(true);
+		setActionError(null);
+		setResumeMessage(null);
+		try {
+			await resumeSession(session.path);
+			setResumeMessage(`Launched session ${session.path} in a new terminal window.`);
+			window.clearTimeout(resumeMessageTimer.current);
+			resumeMessageTimer.current = window.setTimeout(() => setResumeMessage(null), 4000);
+		} catch (err) {
+			setActionError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setResumeInFlight(false);
+			setActionBusy(false);
+		}
+	};
+
 	const handleArchive = async () => {
 		if (actionBusy) return;
 		if (!window.confirm("Archive this session?")) return;
@@ -217,6 +241,21 @@ export function SessionDrawer({ session, onClose, onArchived, onDeleted }: Sessi
 							<StatusPill variant={statusPillVariant(session.status)}>{session.status}</StatusPill>
 
 							<div style={{ display: "flex", gap: "8px" }}>
+								<button
+									type="button"
+									onClick={handleResume}
+									disabled={actionBusy}
+									className="stats-sessions-action-btn"
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: "4px",
+										padding: "4px 8px",
+										fontSize: "12px",
+									}}
+								>
+									<Play size={14} /> {resumeInFlight ? "Launching…" : "Resume"}
+								</button>
 								{!session.archived && (
 									<button
 										type="button"
@@ -256,6 +295,16 @@ export function SessionDrawer({ session, onClose, onArchived, onDeleted }: Sessi
 							<div className="stats-drawer-error-block" style={{ marginTop: "8px" }}>
 								<div className="stats-drawer-error-label">Action Failed</div>
 								<div className="stats-drawer-error-text">{actionError}</div>
+							</div>
+						)}
+
+						{resumeMessage && (
+							<div
+								className="stats-drawer-success"
+								style={{ marginTop: "8px", borderRadius: "var(--radius-lg, 8px)" }}
+							>
+								<div className="stats-drawer-success-title">Terminal launched</div>
+								<div className="stats-drawer-success-message">{resumeMessage}</div>
 							</div>
 						)}
 					</div>

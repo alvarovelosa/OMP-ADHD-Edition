@@ -148,6 +148,23 @@ export async function resetSettingValue(path: string): Promise<{ path: string; v
 		body: JSON.stringify({ path }),
 	});
 }
+
+export async function toggleSettingHidden(
+	path: string,
+	hidden?: boolean,
+): Promise<{ path: string; hidden: boolean; hiddenPaths: string[] }> {
+	return fetchJson(`${API_BASE}/settings/toggle-hide`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path, hidden }),
+	});
+}
+
+export async function clearHiddenSettings(): Promise<{ hiddenPaths: string[] }> {
+	return fetchJson(`${API_BASE}/settings/clear-hidden`, {
+		method: "POST",
+	});
+}
 export async function getSessionsList(
 	options?: { q?: string; includeArchived?: boolean },
 	signal?: AbortSignal,
@@ -182,6 +199,13 @@ export async function archiveSession(sessionPath: string): Promise<{ path: strin
 
 export async function deleteSession(sessionPath: string): Promise<{ path: string; deleted: true }> {
 	return fetchJson(`${API_BASE}/sessions/delete`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path: sessionPath }),
+	});
+}
+export async function resumeSession(sessionPath: string): Promise<void> {
+	await fetchJson<{ ok: true }>(`${API_BASE}/sessions/resume`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ path: sessionPath }),

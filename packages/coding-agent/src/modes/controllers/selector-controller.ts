@@ -592,6 +592,8 @@ export class SelectorController {
 			case "statusLine.sessionAccent":
 			case "statusLine.transparent":
 			case "statusLine.compactThinkingLevel":
+			case "statusLine.leftSegments":
+			case "statusLine.rightSegments":
 			case "statusLineSegments":
 			case "statusLineModelThinking":
 			case "statusLinePathAbbreviate":

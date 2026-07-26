@@ -4,6 +4,7 @@ import { getSessionUsageMap } from "@oh-my-pi/omp-stats";
 import { getAgentDir, getSessionsDir, isEnoent, parseJsonlLenient } from "@oh-my-pi/pi-utils";
 import { archiveDestination, getArchivedSessionsDir, moveSessionWithArtifacts } from "../cli/gc-cli";
 import { applyDashboardCors } from "../utils/dashboard-cors";
+import { openTerminalCommand } from "../utils/open";
 import { listAllSessions, listArchivedSessions, type SessionStatus, sessionDisplayName } from "./session-listing";
 import { FileSessionStorage } from "./session-storage";
 
@@ -234,6 +235,44 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 						response = Response.json({ error: "Session not found" }, { status: 404 });
 					} else {
 						throw err;
+					}
+				}
+			}
+		}
+	} else if (req.method === "POST" && pathname === "/api/sessions/resume") {
+		let body: { path?: string } = {};
+		try {
+			body = (await req.json()) as { path?: string };
+		} catch {
+			// fallback empty body
+		}
+
+		const candidatePath = body?.path;
+		if (!candidatePath || typeof candidatePath !== "string") {
+			response = Response.json({ error: "Missing session path" }, { status: 400 });
+		} else {
+			const agentDir = getAgentDir();
+			const sessionsRoot = path.resolve(getSessionsDir(agentDir));
+			const archivedRoot = path.resolve(getArchivedSessionsDir(agentDir));
+			const resolvedPath = path.resolve(candidatePath);
+			const withinManagedRoots =
+				resolvedPath.startsWith(sessionsRoot + path.sep) || resolvedPath.startsWith(archivedRoot + path.sep);
+			if (!withinManagedRoots) {
+				response = Response.json({ error: "Path is outside the managed sessions directory" }, { status: 400 });
+			} else {
+				const sessions = [...(await listAllSessions()), ...(await listArchivedSessions())];
+				const session = sessions.find(s => s.path === resolvedPath);
+				if (!session) {
+					response = Response.json({ error: "Session not found" }, { status: 404 });
+				} else {
+					try {
+						await openTerminalCommand("omp", ["-r", session.id], session.cwd || process.cwd());
+						response = Response.json({ ok: true });
+					} catch (err) {
+						response = Response.json(
+							{ error: err instanceof Error ? err.message : String(err) },
+							{ status: 500 },
+						);
 					}
 				}
 			}

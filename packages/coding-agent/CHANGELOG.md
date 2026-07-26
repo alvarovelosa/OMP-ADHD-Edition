@@ -4,9 +4,15 @@
 
 ### Added
 
+- The settings HTTP API now supports hiding settings: `GET /api/settings/tab/:id` includes a `hidden: boolean` property based on `settings.hiddenPaths`, and new `POST /api/settings/toggle-hide` and `POST /api/settings/clear-hidden` endpoints allow toggling or resetting hidden settings from the dashboard.
+
 - `omp usage` now surfaces auto-disabled credentials as red `✗` tombstone rows (identity, how long ago, the shortened upstream cause — e.g. `Refresh token expired` — and a re-login hint), including a provider section when no active credential remains. User-driven tombstones (`replaced by newer credential`, `deleted by user`) and API-key rows stay hidden. Requires a broker with `GET /v1/credentials/disabled`; older brokers degrade to no tombstone rows.
 - `omp usage` warns about Anthropic's ~30-day OAuth grant lifetime: accounts whose interactive login (`authorizedAt`) is within a week of the deadline get a yellow `⚠ re-login within <time>` line, and past-deadline accounts a red one. Grants die server-side exactly ~30 days after login regardless of refresh rotation, so this is the only warning before the broker auto-disables the row.
 - Numbered sessions: each session now gets a stable, unique sequence number (`#N`) assigned lazily on first listing and persisted in `agent.db`'s new `session_seq` table — numbers never change once assigned, and legacy sessions get oldest-first ordering on first scan. The `#N` prefix appears in `omp stats`, the TUI `/resume` picker, and `sessionDisplayName()` output. `omp --resume <N>` and `omp --resume #N` resume by number; the bare-`N` and `#N` syntax also work in the `/resume` slash command.
+- TUI settings: press `F2` on any setting to hide it from the settings list, `F3` to reveal hidden settings again, and `F4` to reset (clear the hidden-paths list). Hiding trims the view down to what actually matters instead of every setting always being visible; hidden paths persist in the new `settings.hiddenPaths` setting.
+- TUI settings: the Appearance tab now renders a live preview of the status line directly in the settings screen, updating as you change preset, segments, separator, or accent — no need to leave settings to see the result. The "Left Segments"/"Right Segments" custom-preset editors are ordered multi-select lists (reorder with the same submenu used elsewhere) with human-readable labels/descriptions instead of raw segment ids.
+- Model sampling settings (temperature, top-p, top-k) are now free-form numeric text entry instead of fixed dropdown presets, with a placeholder hint showing the valid range; any in-range value can be typed instead of picking from a short preset list.
+- The stats dashboard's sessions page now has a "Resume" action alongside Archive/Delete: it POSTs to a new `/api/sessions/resume` endpoint, which launches a detached, visible PowerShell window running `omp -r <sessionId>` in the session's original working directory.
 
 ### Fixed
 
@@ -15,6 +21,7 @@
 - `omp usage` revalidates the broker credential snapshot before rendering: live usage reports were previously paired with a disk-cached account list up to an hour old, so a just-completed re-login (org-less row upserted to org-scoped) rendered as a phantom duplicate until the cache expired.
 - Session titles derived from compaction's `shortSummary` fallback no longer leak raw `<summary>…</summary>` wrapper tags: tags are stripped at read-time in `sanitizeSessionName()` and at the source in `scanSessionFile()`, so all consumers (dashboard, TUI picker, search) see clean titles. The compaction short-summary prompt also now forbids wrapping output in `<summary>` or any other XML/HTML tag.
 - The `/resume` slash command test suite no longer fails with `EBUSY` (resource busy or locked) on Windows during temp-dir cleanup: `attachSessionSeqNumbers` opens `agent.db` (SQLite WAL mode) during session listing, and the SQLite handle's release is asynchronous on Windows, so `removeWithRetries` deadlocked until timeout on the last tests in the suite. Cleanup errors are now swallowed per the established `agent-storage-model-perf` test convention, while `AgentStorage.resetInstance()` in `afterEach` ensures each test starts from a clean module singleton.
+- Fixed the stats dashboard returning `Invalid number value` when saving a numeric model-sampling setting (temperature, top-p, top-k) edited as free-form text: the `POST /api/settings/value` validator now coerces inbound strings to numbers for `schemaType === "number"` (empty string restores the default sentinel, non-finite strings still surface a 400), mirroring the TUI's `#setSettingValue` behavior.
 
 ## [17.1.3] - 2026-07-24
 

@@ -1,3 +1,4 @@
+import { Eye, EyeOff } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import type { SettingsField } from "../types";
@@ -6,12 +7,13 @@ import { Dropdown, TextField, Toggle } from "../ui";
 export interface SettingRowProps {
 	field: SettingsField;
 	onChange: (path: string, value: unknown) => Promise<void>;
+	onToggleHide?: (path: string, hidden: boolean) => Promise<void>;
 	onFocus: (field: SettingsField) => void;
 }
 
-export const SettingRow: React.FC<SettingRowProps> = ({ field, onChange, onFocus }) => {
-	const [invalid, setInvalid] = useState(false);
+export const SettingRow: React.FC<SettingRowProps> = ({ field, onChange, onToggleHide, onFocus }) => {
 	const [errorMsg, setErrorMsg] = useState<string | null>(null);
+	const [invalid, setInvalid] = useState(false);
 
 	const isRecord = typeof field.value === "object" && field.value !== null;
 
@@ -71,16 +73,32 @@ export const SettingRow: React.FC<SettingRowProps> = ({ field, onChange, onFocus
 
 	return (
 		<div
-			className={`stats-settings-row ${field.changed ? "is-changed" : ""}`}
+			className={`stats-settings-row ${field.changed ? "is-changed" : ""} ${field.hidden ? "is-hidden" : ""}`}
 			onMouseEnter={() => onFocus(field)}
 			onFocus={() => onFocus(field)}
 		>
 			<div className="stats-settings-row-label">
 				<span className="stats-settings-field-name">{field.label}</span>
 				{field.changed && <span className="stats-settings-changed-badge">modified</span>}
+				{field.hidden && <span className="stats-settings-hidden-badge">hidden</span>}
 			</div>
 			<div className="stats-settings-row-control">
-				{control}
+				<div className="stats-settings-control-wrapper">
+					{control}
+					{onToggleHide && (
+						<button
+							type="button"
+							className="stats-settings-hide-btn"
+							title={field.hidden ? "Unhide setting" : "Hide setting"}
+							onClick={e => {
+								e.stopPropagation();
+								onToggleHide(field.path, !field.hidden);
+							}}
+						>
+							{field.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
+						</button>
+					)}
+				</div>
 				{errorMsg && <div className="stats-settings-row-error">{errorMsg}</div>}
 			</div>
 		</div>
