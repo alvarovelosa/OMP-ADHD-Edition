@@ -35,6 +35,8 @@ import {
 	type AgentTurnEndContext,
 	AppendOnlyContextManager,
 	type AsideMessage,
+	type BeforeToolCallContext,
+	type BeforeToolCallResult,
 	resolveTelemetry,
 	type StreamFn,
 	TERMINAL_TOOL_RESULT_ABORT_REASON,
@@ -71,7 +73,7 @@ import type {
 	ToolResultMessage,
 	UsageReport,
 } from "@oh-my-pi/pi-ai";
-import { deriveClaudeDeviceId, type Effort, streamSimple } from "@oh-my-pi/pi-ai";
+import { type Effort, streamSimple } from "@oh-my-pi/pi-ai";
 import * as AIError from "@oh-my-pi/pi-ai/error";
 import { resetOpenAICodexHistoryAfterCompaction } from "@oh-my-pi/pi-ai/providers/openai-codex-responses";
 import { toolWireSchema } from "@oh-my-pi/pi-ai/utils/schema";
@@ -81,7 +83,6 @@ import {
 	escapeXmlText,
 	formatDuration,
 	getAgentDbPath,
-	getInstallId,
 	isBunTestRuntime,
 	isEnoent,
 	isInteractiveHost,
@@ -134,6 +135,7 @@ import type { CompactOptions, ContextUsage } from "../extensibility/extensions/t
 import type { HookCommandContext } from "../extensibility/hooks/types";
 import type { Skill, SkillWarning } from "../extensibility/skills";
 import { expandSlashCommand, type FileSlashCommand } from "../extensibility/slash-commands";
+import { normalizeToolEventInput, resolveToolEventInput } from "../extensibility/tool-event-input";
 import { GoalRuntime } from "../goals/runtime";
 import type { GoalModeState } from "../goals/state";
 import type { HindsightSessionState } from "../hindsight/state";
@@ -177,6 +179,7 @@ import {
 	toReasoningEffort,
 } from "../thinking";
 import { shutdownTinyTitleClient } from "../tiny/title-client";
+import { resolveApproval } from "../tools/approval";
 import { type AskToolDetails, type AskToolInput, recoverAskQuestions } from "../tools/ask";
 import { releaseTabsForOwner } from "../tools/browser/tab-supervisor";
 import type { CheckpointState, CompletedRewindState } from "../tools/checkpoint";
@@ -229,7 +232,6 @@ import {
 	type AsyncResultEntry,
 	buildAsyncResultBatchMessage,
 } from "./async-job-delivery";
-import type { AuthStorage } from "./auth-storage";
 import { BashRunner, type BashRunnerHost } from "./bash-runner";
 import {
 	checkpointStartedAtFromEntry,
@@ -304,6 +306,7 @@ import {
 } from "./session-maintenance";
 import { cleanupEmptyMoveSession, type SessionManager } from "./session-manager";
 import { SessionMemory, type SessionMemoryHost } from "./session-memory";
+import { buildSessionMetadata } from "./session-metadata";
 import { SessionProviderBoundary, type SessionProviderBoundaryHost } from "./session-provider-boundary";
 import { SessionStatsTracker, type SessionStatsTrackerHost } from "./session-stats";
 import { SessionTools, type SessionToolsHost } from "./session-tools";
@@ -329,53 +332,6 @@ const PLAN_MODE_REMINDER_MAX = 3;
 // ============================================================================
 // Constants
 // ============================================================================
-
-/** Standard thinking levels */
-
-/**
- * Build the per-request `metadata` payload for the Anthropic provider, shaped
- * like real Claude Code's `getAPIMetadata` output (`{ session_id, account_uuid,
- * device_id }`) so the backend buckets requests under one session and attributes
- * them to the authenticated OAuth account when available. Resolved at request
- * time so token refreshes and login/logout transitions don't strand a stale
- * account UUID in memory. `account_uuid` and `device_id` are omitted for
- * non-Anthropic providers to avoid leaking the user's Claude identity to
- * third-party APIs (including Anthropic-format-compatible proxies such as
- * cloudflare-ai-gateway or gitlab-duo).
- *
- * `provider` is the target provider string (e.g. `"anthropic"`) and gates the
- * `account_uuid` and `device_id` lookups — only `"anthropic"` requests carry them.
- *
- * `sessionId` is forwarded to the auth-storage session-sticky lookup so that
- * multi-credential setups attribute to the same OAuth account used for the
- * actual API request rather than always picking the first credential.
- *
- * `authStorage` is treated as optional so test fixtures that stub `modelRegistry`
- * without a real storage layer still work; the resolver simply skips the lookup
- * and emits `{ session_id }` alone, matching the no-OAuth-credential path.
- */
-function buildSessionMetadata(
-	sessionId: string,
-	provider: string,
-	authStorage: AuthStorage | undefined,
-): Record<string, unknown> {
-	const userId: Record<string, string> = { session_id: sessionId };
-	// Only look up account_uuid when the request is going to Anthropic. Injecting
-	// a Claude OAuth account_uuid into requests bound for other providers (including
-	// Anthropic-format-compatible proxies like cloudflare-ai-gateway or gitlab-duo)
-	// would leak the user's Anthropic identity to unrelated third-party APIs.
-	if (provider === "anthropic") {
-		const accountUuid = authStorage?.getOAuthAccountId("anthropic", sessionId);
-		if (typeof accountUuid === "string" && accountUuid.length > 0) {
-			userId.account_uuid = accountUuid;
-			// Claude Code's `device_id` is a stable 64-hex account-scoped install
-			// identifier. Include both omp's persistent install id and the Claude
-			// account UUID so two accounts on the same install do not share a device.
-			userId.device_id = deriveClaudeDeviceId(getInstallId(), accountUuid);
-		}
-	}
-	return { user_id: JSON.stringify(userId) };
-}
 
 const noOpUIContext: ExtensionUIContext = {
 	select: async (_title, _options, _dialogOptions) => undefined,
@@ -429,7 +385,7 @@ type ScheduledAgentContinueOptions = {
 	generation?: number;
 	shouldContinue?: () => boolean;
 	onSkip?: (reason: AgentContinueSkipReason) => void;
-	onError?: () => void;
+	onError?: (error: unknown) => void;
 };
 
 type SessionTitleSource = "auto" | "user";
@@ -901,6 +857,7 @@ export class AgentSession {
 			agent: this.agent,
 			sessionManager: this.sessionManager,
 			model: () => this.model,
+			configuredThinkingLevel: () => this.configuredThinkingLevel(),
 			emitNotice: (level, message, source) => this.emitNotice(level, message, source),
 			setModelTemporary: (model, thinkingLevel, options) => this.setModelTemporary(model, thinkingLevel, options),
 			setActiveToolsByName: names => this.setActiveToolsByName(names),
@@ -958,6 +915,7 @@ export class AgentSession {
 		this.#models = new ModelControls(modelControlsHost, {
 			scopedModels: config.scopedModels,
 			thinkingLevel: config.thinkingLevel,
+			thinkingLevelCeiling: config.thinkingLevelCeiling,
 			serviceTierByFamily: config.serviceTierByFamily,
 		});
 
@@ -975,6 +933,7 @@ export class AgentSession {
 			thinkingLevel: () => this.thinkingLevel,
 			configuredThinkingLevel: () => this.configuredThinkingLevel(),
 			setThinkingLevel: level => this.setThinkingLevel(level),
+			thinkingLevelCeiling: () => this.#models.thinkingLevelCeiling,
 			isDisposed: () => this.#isDisposed,
 			isStreaming: () => this.isStreaming,
 			isCompacting: () => this.isCompacting,
@@ -1222,6 +1181,10 @@ export class AgentSession {
 		});
 		// Tool-result hook owns synchronous post-tool actions that must affect the current loop.
 		this.agent.afterToolCall = ctx => this.#afterToolCall(ctx);
+		// Pre-scheduling tool_call wiring: extension handlers run at arg-prep
+		// time so a block/revision lands before concurrency resolution,
+		// tool_execution_start, and the wrapper's approval gate.
+		this.agent.beforeToolCall = ctx => this.#beforeToolCall(ctx);
 		this.agent.providerSessionState = this.#providerSessionState;
 		this.#syncAgentSessionId();
 		this.#todo.syncFromBranch();
@@ -1518,7 +1481,7 @@ export class AgentSession {
 
 		this.#toolChoiceQueue.pushSequence([forced, "none"], {
 			label: "user-force",
-			onRejected: () => "requeue",
+			onRejected: info => (info.reason === "unavailable" ? "drop_sequence" : "requeue"),
 		});
 	}
 
@@ -2249,7 +2212,7 @@ export class AgentSession {
 		// Deobfuscate assistant message content for display emission — the LLM echoes back
 		// obfuscated placeholders, but listeners (TUI, extensions, exporters) must see real
 		// values. The original event.message stays obfuscated so the persistence path below
-		// writes `#HASH#` tokens to the session file; convertToLlm re-obfuscates outbound
+		// writes `$$HASH$$` tokens to the session file; convertToLlm re-obfuscates outbound
 		// traffic on the next turn. Walks text, thinking, and toolCall arguments/intent.
 		let displayEvent: AgentEvent = event;
 		const obfuscator = this.#obfuscator;
@@ -2632,8 +2595,14 @@ export class AgentSession {
 				return;
 			}
 
-			if (this.#recovery.isRetryableReasonlessAbort(msg)) {
-				const didRetry = await this.#recovery.handleRetryableError(msg, { allowModelFallback: false });
+			const resolvedInterruptedToolTurn = this.#recovery.classifyResolvedInterruptedToolTurn(msg);
+			if (this.#recovery.isRetryableReasonlessAbort(msg) || resolvedInterruptedToolTurn === "reasonless-abort") {
+				const didRetry = await this.#recovery.handleRetryableError(
+					msg,
+					resolvedInterruptedToolTurn === "reasonless-abort"
+						? { allowModelFallback: false, preserveFailedTurn: true }
+						: { allowModelFallback: false },
+				);
 				if (didRetry) {
 					await emitAgentEndNotification({ willContinue: true });
 					return;
@@ -2659,7 +2628,7 @@ export class AgentSession {
 					return;
 				}
 			}
-			const resumeResolvedStreamStall = this.#recovery.canResumeResolvedStreamStall(msg);
+			const resumeResolvedStreamStall = resolvedInterruptedToolTurn === "stream-stall";
 			if (resumeResolvedStreamStall || this.#recovery.isRetryableError(msg)) {
 				const didRetry = await this.#recovery.handleRetryableError(
 					msg,
@@ -2859,7 +2828,7 @@ export class AgentSession {
 						error: error instanceof Error ? error.message : String(error),
 						stack: error instanceof Error ? error.stack : undefined,
 					});
-					options?.onError?.();
+					options?.onError?.(error);
 				} finally {
 					this.#endInFlight();
 				}
@@ -3000,6 +2969,50 @@ export class AgentSession {
 		}
 		return this.#ttsr.afterToolCall(ctx);
 	}
+	/**
+	 * Emits the extension `tool_call` event for a loop-dispatched call at
+	 * arg-prep time — before concurrency scheduling, `tool_execution_start`,
+	 * and the wrapper's approval gate. A handler block becomes a blocked tool
+	 * result; a handler `input` revision becomes the arguments the loop
+	 * schedules, displays, persists, and executes, so approval resolves against
+	 * what actually runs. Marks the dispatch so `ExtensionToolWrapper` does not
+	 * emit a second event (nested xd:// device dispatches and direct non-loop
+	 * execution still emit there).
+	 */
+	async #beforeToolCall(ctx: BeforeToolCallContext): Promise<BeforeToolCallResult | undefined> {
+		const runner = this.#extensionRunner;
+		if (!runner?.hasHandlers("tool_call")) return undefined;
+		const metadata = ctx.toolCall.providerMetadata;
+		const computer = metadata?.type === "computer" ? metadata : undefined;
+		// Parity with the wrapper's pre-emit short-circuit: an already-denied
+		// call never reaches extensions. Deny is mode-independent (tool decision
+		// or user policy), so resolving under the most permissive mode is exact;
+		// the wrapper still enforces the mode-accurate gate before execution.
+		const userPolicies = (this.settings.get("tools.approval") ?? {}) as Record<string, unknown>;
+		const approvalArgs = computer ? { actions: computer.actions } : ctx.args;
+		if (resolveApproval(ctx.tool, approvalArgs, "yolo", userPolicies).policy === "deny") {
+			return undefined;
+		}
+		const eventArgs = computer
+			? { actions: computer.actions, pendingSafetyChecks: computer.pendingSafetyChecks }
+			: ctx.args;
+		runner.markToolCallEmitted(ctx.toolCall.id, ctx.tool.name);
+		const callResult = await runner.emitToolCall({
+			type: "tool_call",
+			toolName: ctx.tool.name,
+			toolCallId: ctx.toolCall.id,
+			input: normalizeToolEventInput(ctx.tool.name, resolveToolEventInput(ctx.tool, eventArgs)),
+		});
+		if (callResult?.block) {
+			return { block: true, reason: callResult.reason || "Tool execution was blocked by an extension" };
+		}
+		// A computer call's event input is a synthetic {actions, pendingSafetyChecks}
+		// view, not the execution params — a revision cannot map back onto them.
+		if (callResult?.input !== undefined && !computer) {
+			return { args: callResult.input };
+		}
+		return undefined;
+	}
 
 	/** Find the last assistant message in agent state (including aborted ones) */
 	#findLastAssistantMessage(): AssistantMessage | undefined {
@@ -3078,6 +3091,7 @@ export class AgentSession {
 			session_id: this.sessionId,
 			session_file: this.sessionFile,
 			stop_hook_active: this.#sessionStopHookActive,
+			signal: this.#postPromptTasksAbortController.signal,
 		});
 		if (this.#promptGeneration !== generation || this.#abortInProgress || this.#isDisposed) {
 			this.#resetSessionStopContinuationState();
@@ -3336,6 +3350,12 @@ export class AgentSession {
 		this.agent.setMetadataResolver((provider: string) =>
 			buildSessionMetadata(sid, provider, this.#modelRegistry.authStorage),
 		);
+		// Keep every live advisor's provider identity in lockstep with the primary's
+		// across every session-boundary transition — including branch paths that
+		// skip conversation restore — so advisors never emit the previous
+		// conversation's session id/metadata (issue #6625). Guarded because this
+		// runs once during construction before the advisor controller exists.
+		if (this.#advisors) this.#advisors.refreshProviderIdentity();
 	}
 
 	/** Run one abortable auto-learn capture outside the primary agent loop. */
@@ -4097,10 +4117,7 @@ export class AgentSession {
 	 * Transcript for TUI display. Full history is kept for export/resume-style
 	 * callers; live chat can collapse compacted history to keep the hot render
 	 * surface bounded. Display-only — NEVER feed the result to
-	 * `agent.replaceMessages` or a provider. Because it is never re-obfuscated,
-	 * it opts into legacy index-derived alias restoration so pre-keyed sessions
-	 * still render their secrets; the agent-feeding paths
-	 * (`buildDisplaySessionContext`) keep the keyed-only default.
+	 * `agent.replaceMessages` or a provider.
 	 */
 	buildTranscriptSessionContext(
 		options?: Pick<BuildSessionContextOptions, "collapseCompactedHistory" | "keepDanglingToolCalls">,
@@ -4259,6 +4276,7 @@ export class AgentSession {
 
 	/** Drop mutable tool decisions and directives owned by the previous logical session. */
 	#clearSessionScopedToolState(): void {
+		this.agent.clearDeferredToolDirectives();
 		this.#toolChoiceQueue.clear();
 		this.#tools.clearAcpPermissionDecisions();
 	}
@@ -5938,6 +5956,10 @@ export class AgentSession {
 				additionalDirectories: this.settings.get("workspace.additionalDirectories"),
 			});
 			this.#bash.markSessionTransition(bashTransition);
+			// The new session owns the transcript from here, so the previous
+			// conversation's advisor spend is retired with it. Clearing at the commit
+			// point keeps the status line honest even if a later step below throws.
+			this.#advisors.clearCost();
 			sessionTransitioned = true;
 		} finally {
 			this.#bash.finishSessionTransition(bashTransition, sessionTransitioned);
@@ -6360,7 +6382,7 @@ export class AgentSession {
 			activeMessages.splice(0, activeMessages.length, ...sessionContext.messages);
 		}
 		this.agent.replaceMessages(activeMessages ?? sessionContext.messages);
-		this.#advisors.resetSessionState();
+		this.#advisors.resetSessionState({ preserveCost: true });
 		this.#todo.syncFromBranch();
 		this.#closeCodexProviderSessionsForHistoryRewrite();
 		this.#checkpointState = undefined;
@@ -6978,7 +7000,7 @@ export class AgentSession {
 			}
 
 			this.agent.replaceMessages(sessionContext.messages);
-			this.#advisors.resetSessionState();
+			this.#advisors.resetSessionState({ preserveCost: true });
 			this.#todo.syncFromBranch();
 			if (switchingToDifferentSession) {
 				this.#closeAllProviderSessions("session switch");
@@ -7087,6 +7109,9 @@ export class AgentSession {
 					error: String(refreshErr),
 				});
 			}
+			// Only a committed switch retires the previous conversation's advisor spend:
+			// an earlier clear would be lost work if any step above rolled the switch back.
+			if (switchingToDifferentSession) this.#advisors.clearCost();
 			this.#bash.finishSessionTransition(bashTransition, true);
 			return true;
 		} catch (error) {
@@ -7185,6 +7210,7 @@ export class AgentSession {
 				this.sessionManager.createBranchedSession(selectedEntry.parentId);
 			}
 			this.#bash.markSessionTransition(bashTransition);
+			this.#advisors.clearCost();
 			sessionTransitioned = true;
 		} finally {
 			this.#bash.finishSessionTransition(bashTransition, sessionTransitioned);
@@ -7282,6 +7308,7 @@ export class AgentSession {
 		try {
 			this.sessionManager.createBranchedSession(leafId);
 			this.#bash.markSessionTransition(bashTransition);
+			this.#advisors.clearCost();
 			sessionTransitioned = true;
 		} finally {
 			this.#bash.finishSessionTransition(bashTransition, sessionTransitioned);
@@ -7373,6 +7400,14 @@ export class AgentSession {
 		 * (issue #5642).
 		 */
 		reopenAsk?: { toolCallId: string; questions: AskToolInput["questions"] };
+		/**
+		 * `true` when this call committed a new sibling answer for an `ask`
+		 * re-answer (`reanswerAskResult` was applied). The interactive caller
+		 * resumes the agent via {@link resumeAfterAskReanswer} *after* rebuilding
+		 * its transcript, so the resumed turn never renders against the stale
+		 * pre-rebuild UI (issue #6483).
+		 */
+		askReanswerCommitted?: boolean;
 	}> {
 		await this.#bash.flushPending();
 		const oldLeafId = this.sessionManager.getLeafId();
@@ -7523,6 +7558,10 @@ export class AgentSession {
 		// Determine the new leaf position based on target type
 		let newLeafId: string | null;
 		let editorText: string | undefined;
+		// Set when the second-pass `ask` re-answer branch below actually commits a
+		// new sibling answer — the trigger for resuming the agent afterwards so the
+		// model consumes it, mirroring a live `ask` completion (issue #6483).
+		let isAskReanswerCompletion = false;
 
 		if (targetEntry.type === "message" && targetEntry.message.role === "user") {
 			// User message: leaf = parent (null if root), text goes to editor
@@ -7559,6 +7598,7 @@ export class AgentSession {
 				timestamp: Date.now(),
 			};
 			newLeafId = this.sessionManager.appendMessageToBranch(toolResultMessage, targetEntry.parentId);
+			isAskReanswerCompletion = true;
 		} else {
 			// Non-user message (or a user-invoked skill-prompt injection): land the
 			// leaf on the selected node so it stays on the active branch. Skill
@@ -7598,11 +7638,19 @@ export class AgentSession {
 		const displayContext = deobfuscateSessionContext(stateContext, this.#obfuscator);
 		this.agent.replaceMessages(displayContext.messages);
 		this.#rehydrateCheckpointRewindState();
-		this.#advisors.resetSessionState();
+		this.#advisors.resetSessionState({ preserveCost: true });
 		this.#todo.syncFromBranch();
 		this.#closeCodexProviderSessionsForHistoryRewrite();
 
 		this.#branchSummaryAbortController = undefined;
+
+		// Report a committed `ask` re-answer so the interactive caller can resume
+		// the agent via `resumeAfterAskReanswer()` *after* rebuilding its
+		// transcript. Scheduling the continue here instead would start a fresh
+		// streaming turn whose `agent_start`/`turn_start` events could render
+		// against the stale pre-rebuild UI and then be clobbered by the caller's
+		// `renderInitialMessages(...)` (issue #6483). Plain leaf moves and the
+		// read-only `reopenAsk` probe leave the flag unset.
 
 		// Emit session_tree event; only handlers can mutate session entries, so skip
 		// the emit and the context rebuild when no handlers are registered (mirrors
@@ -7616,9 +7664,34 @@ export class AgentSession {
 				fromExtension: summaryText ? fromExtension : undefined,
 			});
 			const rawContext = this.sessionManager.buildSessionContext();
-			return { editorText, cancelled: false, summaryEntry, sessionContext: rawContext };
+			return {
+				editorText,
+				cancelled: false,
+				summaryEntry,
+				sessionContext: rawContext,
+				askReanswerCommitted: isAskReanswerCompletion,
+			};
 		}
-		return { editorText, cancelled: false, summaryEntry, sessionContext: stateContext };
+		return {
+			editorText,
+			cancelled: false,
+			summaryEntry,
+			sessionContext: stateContext,
+			askReanswerCommitted: isAskReanswerCompletion,
+		};
+	}
+
+	/**
+	 * Resume the agent after the interactive `/tree` caller has committed an
+	 * `ask` re-answer (`navigateTree` returned `askReanswerCommitted`) and
+	 * rebuilt its transcript. Mirrors how a live `ask` completion drives a
+	 * follow-up turn, but is deferred to the caller so the resumed turn renders
+	 * against the rebuilt UI rather than the stale pre-navigation transcript
+	 * (issue #6483). The scheduled continue honors the same disposed/compacting
+	 * guards as every other post-prompt continuation.
+	 */
+	resumeAfterAskReanswer(): void {
+		this.#scheduleAgentContinue();
 	}
 
 	/**
@@ -8195,6 +8268,11 @@ export class AgentSession {
 	 */
 	getAdvisorStatusOverview(): { configured: boolean; advisors: { name: string; status: AdvisorRuntimeStatus }[] } {
 		return this.#advisors.getAdvisorStatusOverview();
+	}
+
+	/** Return cumulative cost recorded for the current session's advisor activity. */
+	getAdvisorCost(): number {
+		return this.#advisors.getAdvisorCost();
 	}
 	/**
 	 * Return structured advisor stats for the status command and TUI panel.

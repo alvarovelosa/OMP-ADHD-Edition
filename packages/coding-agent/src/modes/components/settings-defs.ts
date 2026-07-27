@@ -18,6 +18,7 @@ import {
 	getPathsForTab,
 	getType,
 	getUi,
+	isCredential,
 	SETTING_TABS,
 	type SettingPath,
 	type SettingTab,
@@ -202,7 +203,10 @@ function pathToSettingDef(path: SettingPath): SettingDef | null {
 		if (options) {
 			return { ...base, type: "submenu", options };
 		}
-		return { ...base, type: "text", secret: ui.secret === true, placeholder: ui.placeholder };
+		// One classification drives both surfaces: a setting marked `credential`
+		// masks here too, so the panel cannot display one that only the CLI knows
+		// to redact.
+		return { ...base, type: "text", secret: ui.secret === true || isCredential(path), placeholder: ui.placeholder };
 	}
 
 	if (schemaType === "array") {
