@@ -2327,21 +2327,6 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * Get API key and headers for a model. Compatibility method for extensions.
-	 */
-	async getApiKeyAndHeaders(
-		model: Model<Api>,
-		sessionId?: string,
-	): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string> }> {
-		const apiKey = await this.getApiKey(model, sessionId);
-		if (!apiKey) {
-			return { ok: false };
-		}
-		const headers = model.headers ? { ...model.headers } : undefined;
-		return { ok: true, apiKey, headers };
-	}
-
-	/**
 	 * Get API key for a provider (e.g., "openai").
 	 *
 	 * `options.forceRefresh` powers step (b) of the auth-retry policy — it

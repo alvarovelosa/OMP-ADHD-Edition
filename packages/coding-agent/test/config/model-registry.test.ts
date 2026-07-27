@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, test, vi } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AuthStorage, Model } from "@oh-my-pi/pi-ai";
+import type { AuthStorage } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
-import { kNoAuth, ModelRegistry } from "../../src/config/model-registry";
+import { ModelRegistry } from "../../src/config/model-registry";
 
 /** Stub auth storage for registry lifecycle and missing-credential coverage. */
 function createStubAuthStorage(): AuthStorage {
@@ -179,65 +179,5 @@ describe("ModelRegistry", () => {
 		vi.spyOn(registry, "getApiKey").mockRejectedValue(new Error("auth failed"));
 
 		expect(await registry.getApiKeyAndHeaders(model)).toEqual({ ok: false, error: "auth failed" });
-	});
-});
-function createMockAuthStorage(keys: Record<string, string> = {}): AuthStorage {
-	return {
-		setFallbackResolver: () => {},
-		clearConfigApiKeys: () => {},
-		hasAuth: (provider: string) => provider in keys,
-		getApiKey: async (provider: string) => keys[provider],
-	} as unknown as AuthStorage;
-}
-
-describe("ModelRegistry", () => {
-	describe("getApiKeyAndHeaders", () => {
-		it("returns ok: true with apiKey and headers when API key exists", async () => {
-			const authStorage = createMockAuthStorage({ openai: "test-openai-key" });
-			const registry = new ModelRegistry(authStorage);
-			const model: Model = {
-				id: "gpt-4o",
-				provider: "openai",
-				name: "GPT-4o",
-				headers: { "X-Custom-Header": "value" },
-			} as unknown as Model;
-
-			const result = await registry.getApiKeyAndHeaders(model);
-			expect(result).toEqual({
-				ok: true,
-				apiKey: "test-openai-key",
-				headers: { "X-Custom-Header": "value" },
-			});
-		});
-
-		it("returns ok: false when no API key is available", async () => {
-			const authStorage = createMockAuthStorage({});
-			const registry = new ModelRegistry(authStorage);
-			const model: Model = {
-				id: "gpt-4o",
-				provider: "openai",
-				name: "GPT-4o",
-			} as unknown as Model;
-
-			const result = await registry.getApiKeyAndHeaders(model);
-			expect(result).toEqual({ ok: false });
-		});
-
-		it("returns ok: true for keyless provider returning kNoAuth", async () => {
-			const authStorage = createMockAuthStorage({});
-			const registry = new ModelRegistry(authStorage);
-			const model: Model = {
-				id: "llama3",
-				provider: "ollama",
-				name: "Llama 3",
-			} as unknown as Model;
-
-			const result = await registry.getApiKeyAndHeaders(model);
-			expect(result).toEqual({
-				ok: true,
-				apiKey: kNoAuth,
-				headers: undefined,
-			});
-		});
 	});
 });
