@@ -30,8 +30,8 @@ Upstream moves fast; this fork tracks it via periodic merges (see
 - **Numbered Sessions** (`packages/coding-agent`, `packages/stats`) — every
   session gets a stable `#N` (`#aN` once archived). `omp --resume <N>` /
   `/resume #N`.
-- **`/models` and `/chat/completions` route aliases** (`packages/coding-agent`)
-  — added to the auth-gateway.
+- **`/models` and `/chat/completions` route aliases** (`packages/ai`) — added
+  to the auth-gateway HTTP server (`src/auth-gateway/server.ts`).
 
 Detail and exact behavior for each of these lives in the owning package's
 `CHANGELOG.md [Unreleased]` section — check there before touching related
@@ -43,7 +43,8 @@ not the source of truth.
 | Package | Owns |
 |---|---|
 | `packages/stats` | Web Settings Panel, Sessions Dashboard, numbered-session display |
-| `packages/coding-agent` | Session numbering logic, auth-gateway route aliases |
+| `packages/coding-agent` | Session numbering logic |
+| `packages/ai` | Auth-gateway route aliases |
 
 ## Updating this file
 
