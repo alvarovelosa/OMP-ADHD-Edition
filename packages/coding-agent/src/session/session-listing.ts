@@ -301,6 +301,24 @@ function extractStringProperty(source: string, name: string, startIndex = 0): st
 	return decodeJsonStringFragment(source.slice(valueStart));
 }
 
+/**
+ * Cheap full-file check for whether a session has any real message entries (`type: "message"`).
+ * Scans with `indexOf`/`extractStringProperty` only — no `JSON.parse` allocation — and bails on
+ * the first match, so it stays cheap even for large session files.
+ */
+export function hasMessageEntries(content: string): boolean {
+	let index = 0;
+	while (index < content.length) {
+		const typeIndex = content.indexOf('"type"', index);
+		if (typeIndex === -1) return false;
+		const colonIndex = content.indexOf(":", typeIndex + 6);
+		if (colonIndex === -1) return false;
+		if (extractStringProperty(content, "type", typeIndex) === "message") return true;
+		index = colonIndex + 1;
+	}
+	return false;
+}
+
 function countMessageMarkers(content: string): number {
 	let count = 0;
 	let index = 0;

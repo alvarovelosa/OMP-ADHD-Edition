@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Fixed "Show archived" toggle in the sessions dashboard by expanding query parameter handling so archived sessions are loaded when enabled.
 - Fixed the "Resume" button appearing unresponsive: the click now disables just the Resume button (label swaps to "Launching…") and shows a transient "Terminal launched" success banner for ~4 s after the spawn resolves, alongside the existing error block on failure.
 
 ## [17.1.2] - 2026-07-24

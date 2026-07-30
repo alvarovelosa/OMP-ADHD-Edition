@@ -55,8 +55,8 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 				limit = parsed;
 			}
 		}
-
-		const includeArchived = url.searchParams.get("includeArchived") === "1";
+		const archivedParam = url.searchParams.get("includeArchived");
+		const includeArchived = archivedParam === "1" || archivedParam === "true";
 		const sessions = includeArchived
 			? [...(await listAllSessions()), ...(await listArchivedSessions())].sort(
 					(a, b) => b.modified.getTime() - a.modified.getTime(),

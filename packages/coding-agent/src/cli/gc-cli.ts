@@ -6,7 +6,12 @@ import { getAgentDir, getBlobsDir, getHistoryDbPath, getModelDbPath, getSessions
 import { Settings } from "../config/settings";
 import { getDefault } from "../config/settings-schema";
 import { BLOB_HASH_RE } from "../session/blob-store";
-import { listSessionsReadOnly, type SessionInfo, type SessionStatus } from "../session/session-listing";
+import {
+	hasMessageEntries,
+	listSessionsReadOnly,
+	type SessionInfo,
+	type SessionStatus,
+} from "../session/session-listing";
 import { FileSessionStorage } from "../session/session-storage";
 
 const BLOB_FILE_RE = /^([a-f0-9]{64})(?:\.[A-Za-z0-9][A-Za-z0-9._-]{0,31})?$/;
@@ -53,6 +58,8 @@ export interface ArchiveGcResult {
 	keptNewestPerCwd: number;
 	wouldArchive: number;
 	archived: number;
+	wouldDeleteEmpty: number;
+	deletedEmpty: number;
 	historyRowsDeleted: number;
 	ftsRebuilt: boolean;
 	errors: string[];
@@ -605,11 +612,14 @@ async function runArchiveGc(options: ResolvedGcOptions, archiveRoot: string): Pr
 		keptNewestPerCwd: 0,
 		wouldArchive: 0,
 		archived: 0,
+		wouldDeleteEmpty: 0,
+		deletedEmpty: 0,
 		historyRowsDeleted: 0,
 		ftsRebuilt: false,
 		errors: [],
 	};
 	const candidates: ArchiveCandidate[] = [];
+	const emptySessions: SessionInfo[] = [];
 	let inactiveSeen = 0;
 	const inactiveSeenByCwd = new Map<string, number>();
 	const archiveBeforeMs = Date.now() - GC_WRITE_GRACE_MS;
@@ -625,6 +635,11 @@ async function runArchiveGc(options: ResolvedGcOptions, archiveRoot: string): Pr
 		}
 		if (await hasLiveNestedSessions(session, archiveBeforeMs)) {
 			result.skippedActive += 1;
+			continue;
+		}
+		const content = await readTextIfPresent(session.path);
+		if (content !== "" && !hasMessageEntries(content)) {
+			emptySessions.push(session);
 			continue;
 		}
 		const cwdKey = sessionCwdKey(sessionsRoot, session);
@@ -648,6 +663,7 @@ async function runArchiveGc(options: ResolvedGcOptions, archiveRoot: string): Pr
 	}
 
 	result.wouldArchive = candidates.length;
+	result.wouldDeleteEmpty = emptySessions.length;
 	if (!options.apply) return result;
 
 	const archivedSessionIds: string[] = [];
@@ -661,8 +677,30 @@ async function runArchiveGc(options: ResolvedGcOptions, archiveRoot: string): Pr
 		}
 	}
 
-	await cleanupHistoryRowsForArchivedSessions(options, archiveRoot, archivedSessionIds, result);
+	const deletedSessionIds: string[] = [];
+	for (const session of emptySessions) {
+		try {
+			await deleteEmptySessionFiles(session);
+			result.deletedEmpty += 1;
+			deletedSessionIds.push(session.id);
+		} catch (error) {
+			result.errors.push(`${session.path}: ${errorMessage(error)}`);
+		}
+	}
+
+	await cleanupHistoryRowsForArchivedSessions(
+		options,
+		archiveRoot,
+		[...archivedSessionIds, ...deletedSessionIds],
+		result,
+	);
 	return result;
+}
+
+async function deleteEmptySessionFiles(session: SessionInfo): Promise<void> {
+	const artifactsDir = sessionArtifactsPath(session.path);
+	await fs.rm(session.path, { force: true });
+	await fs.rm(artifactsDir, { recursive: true, force: true });
 }
 
 async function checkpointWal(dbPath: string, apply: boolean): Promise<WalCheckpointResult> {
@@ -919,6 +957,9 @@ function renderText(result: GcResult): string {
 		lines.push(
 			`sessions: ${result.archive.archived}/${result.archive.wouldArchive} archived, ${result.archive.historyRowsDeleted} history rows removed`,
 		);
+		if (result.archive.wouldDeleteEmpty > 0) {
+			lines.push(`sessions deleted (empty): ${result.archive.deletedEmpty}/${result.archive.wouldDeleteEmpty}`);
+		}
 		if (result.archive.skippedActive > 0) lines.push(`sessions skipped active: ${result.archive.skippedActive}`);
 		if (result.archive.errors.length > 0) lines.push(`session errors: ${result.archive.errors.length}`);
 	}

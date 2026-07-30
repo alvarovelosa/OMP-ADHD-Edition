@@ -171,7 +171,7 @@ export async function getSessionsList(
 ): Promise<SessionListItem[]> {
 	const params = new URLSearchParams();
 	if (options?.q) params.set("q", options.q);
-	if (options?.includeArchived) params.set("includeArchived", "true");
+	if (options?.includeArchived) params.set("includeArchived", "1");
 	const url = params.toString() ? `${API_BASE}/sessions/list?${params.toString()}` : `${API_BASE}/sessions/list`;
 	return fetchJson<SessionListItem[]>(url, { signal });
 }

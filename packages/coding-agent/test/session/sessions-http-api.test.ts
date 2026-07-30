@@ -123,6 +123,20 @@ describe("sessions-http-api", () => {
 				() => false,
 			);
 			expect(existsAfterArchive).toBe(false);
+
+			// Check includeArchived parameter with "1" and "true"
+			const resDefault = await fetch(`http://localhost:${port}/api/sessions/list`);
+			const defaultList = (await resDefault.json()) as Array<{ path: string }>;
+			expect(defaultList.some(s => s.path === archiveResult.archivedTo)).toBe(false);
+
+			const resArchived1 = await fetch(`http://localhost:${port}/api/sessions/list?includeArchived=1`);
+			const archivedList1 = (await resArchived1.json()) as Array<{ path: string; archived?: boolean }>;
+			expect(archivedList1.some(s => s.path === archiveResult.archivedTo && s.archived === true)).toBe(true);
+
+			const resArchivedTrue = await fetch(`http://localhost:${port}/api/sessions/list?includeArchived=true`);
+			const archivedListTrue = (await resArchivedTrue.json()) as Array<{ path: string; archived?: boolean }>;
+			expect(archivedListTrue.some(s => s.path === archiveResult.archivedTo && s.archived === true)).toBe(true);
+
 			// POST /api/sessions/delete
 			const deleteSessionId = `delete-test-${Date.now()}`;
 			const deleteSessionPath = path.join(testProjectDir, `${deleteSessionId}.jsonl`);
