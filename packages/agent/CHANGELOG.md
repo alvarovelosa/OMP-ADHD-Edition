@@ -5,6 +5,12 @@
 ### Fixed
 
 - The compaction short-summary prompt now forbids the model from wrapping its output in `<summary>` or any other XML/HTML tag, preventing the `<summary>…</summary>` context wrapper from leaking into session titles via the `shortSummary` fallback consumed by `sessionDisplayName()`.
+## [17.2.0] - 2026-07-30
+
+### Fixed
+
+- Provider-native compaction failures now surface their transport error instead of silently switching to generic summarization; streaming V2 still falls back to native V1 when available.
+
 ## [17.1.7] - 2026-07-27
 
 ### Changed
