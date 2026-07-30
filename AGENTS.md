@@ -265,3 +265,12 @@ Location: `packages/*/CHANGELOG.md` (per package).
 2. Run `bun run release`.
 
 The script handles version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
+
+## Fork Notes (OMP ADHD Edition)
+
+This is a fork (`alvarovelosa/OMP-ADHD-Edition`, upstream `can1357/oh-my-pi`).
+Before assuming project state, read `FORK.md` and the relevant
+`packages/*/CHANGELOG.md [Unreleased]` sections — don't guess from git log.
+
+When the user says "sync upstream," read `SYNC-UPSTREAM.md` and follow it
+before running any git commands.
