@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [17.2.3] - 2026-08-01
+
+### Added
+
+- Added the ai& (`aiand`) provider registry entry with API-key paste login validated against `https://api.aiand.com/v1/models`.
+
+### Fixed
+
+- Fixed Anthropic OAuth (Claude Pro/Max subscription) requests hard-429ing (`Usage credits are required for long context requests`) on every beta-gated 1M model — e.g. `claude-sonnet-4-6`, which the default `task`/`smol`/`scout` subagent roles resolve to — regardless of prompt size, breaking all subagents. The 17.2.1 cowork request profile reintroduced the `context-1m-2025-08-07` beta for any model with a 1M catalog window, but subscription credentials have no long-context credit balance so Anthropic rejects the request outright. The beta is no longer advertised on OAuth requests; subscription accounts transparently get the standard 200k window. ([#7238](https://github.com/can1357/oh-my-pi/issues/7238))
+- Fixed OpenAI Codex Responses ignoring disabled cache retention when deriving `prompt_cache_key`, while preserving transport session identity ([#7219](https://github.com/can1357/oh-my-pi/issues/7219)).
+
+## [17.2.2] - 2026-07-31
+
+### Added
+
+- Added support for the `gmi-cloud` provider registry, including API-key paste login validation and integration with `@oh-my-pi/pi-catalog`.
+
+### Changed
+
+- Updated `AuthStorage.redeemResetCredit` to prioritize spending the soonest-expiring available saved reset credit, and improved error handling to distinguish between transport failures (`credit_list_failed`) and a genuine lack of credits.
+- Exported `SENSITIVE_TOKEN_RE` from `providers/transform-messages` to allow hosts to route credential shapes through reversible obfuscation instead of irreversible redaction.
+
+### Fixed
+
+- Fixed an issue where Cursor conversation checkpoints were incorrectly recorded as billable output tokens, ensuring accurate usage totals.
+- Fixed an issue in `AuthStorage.refreshStoredOAuthCredential` where expired OAuth credentials were returned without being refreshed when a credential mismatch occurred, which previously resulted in misleading "No API key found" errors.
+- Fixed Cursor history replay issues by preserving structured message order for assistant tool calls/results, retaining Kimi K3 thinking blocks, and preventing unsafe mid-session switches to K3.
+
 ## [17.2.1] - 2026-07-30
 
 ### Added

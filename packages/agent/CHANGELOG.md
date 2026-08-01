@@ -5,6 +5,13 @@
 ### Fixed
 
 - The compaction short-summary prompt now forbids the model from wrapping its output in `<summary>` or any other XML/HTML tag, preventing the `<summary>…</summary>` context wrapper from leaking into session titles via the `shortSummary` fallback consumed by `sessionDisplayName()`.
+## [17.2.2] - 2026-07-31
+
+### Fixed
+
+- Fixed an issue where response-only usage records were incorrectly treated as authoritative context anchors, while ensuring prompt and total-only provider telemetry remains preserved.
+- Fixed context compaction summaries growing excessively with large context windows by capping the summary output budget to 16,384 tokens, ensuring conversations are properly compressed rather than duplicated.
+
 ## [17.2.0] - 2026-07-30
 
 ### Fixed
