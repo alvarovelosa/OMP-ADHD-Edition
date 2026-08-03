@@ -1215,6 +1215,30 @@ function buildAntigravityRequestEnvelope(
 	return { sessionId, requestId, labels };
 }
 
+/**
+ * Map the public `gemini-3.6-flash` id to its tiered wire deployment when no
+ * specific thinking-level suffix was supplied. The bare public string routes
+ * to the tier matching the requested thinking level — `-medium` by default,
+ * `-low` for MINIMAL/LOW, `-high` for HIGH. Ids that already carry a level
+ * suffix (`gemini-3.6-flash-low`/`-medium`/`-high`) — e.g. the catalog's baked
+ * `requestModelId` or an explicit `options.requestModelId` — pass through
+ * untouched.
+ */
+function resolveGemini36FlashTieredWireId(wireModelId: string, thinking: GoogleGeminiCliOptions["thinking"]): string {
+	if (wireModelId !== "gemini-3.6-flash") return wireModelId;
+	const level =
+		thinking?.level ?? (thinking?.suppress && "level" in thinking.suppress ? thinking.suppress.level : undefined);
+	switch (level) {
+		case "MINIMAL":
+		case "LOW":
+			return "gemini-3.6-flash-low";
+		case "HIGH":
+			return "gemini-3.6-flash-high";
+		default:
+			return "gemini-3.6-flash-medium";
+	}
+}
+
 export function buildRequest(
 	model: Model<"google-gemini-cli">,
 	context: Context,
@@ -1332,7 +1356,10 @@ export function buildRequest(
 		};
 	}
 
-	const wireModelId = options.requestModelId ?? model.requestModelId ?? model.id;
+	const baseWireModelId =
+		options.requestModelId ??
+		(model.id === "gemini-3.6-flash" ? "gemini-3.6-flash" : (model.requestModelId ?? model.id));
+	const wireModelId = resolveGemini36FlashTieredWireId(baseWireModelId, options.thinking);
 
 	if (isAntigravity) {
 		// The real client sends a fixed per-model output cap independent of the

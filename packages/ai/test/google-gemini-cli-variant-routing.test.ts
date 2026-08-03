@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Effort, type FetchImpl } from "@oh-my-pi/pi-ai";
+import { buildRequest } from "@oh-my-pi/pi-ai/providers/google-gemini-cli";
 import { streamSimple } from "@oh-my-pi/pi-ai/stream";
 import type { Context, Model } from "@oh-my-pi/pi-ai/types";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
@@ -100,6 +101,28 @@ function unroutedModel(): Model<"google-gemini-cli"> {
 	} satisfies ModelSpec<"google-gemini-cli">);
 }
 
+function publicFlashModel(): Model<"google-gemini-cli"> {
+	return buildModel({
+		id: "gemini-3.6-flash",
+		name: "Gemini 3.6 Flash",
+		api: "google-gemini-cli",
+		provider: "google-antigravity",
+		baseUrl: "https://daily-cloudcode-pa.googleapis.com",
+		reasoning: true,
+		thinking: {
+			mode: "google-level",
+			efforts: [Effort.Minimal, Effort.Low, Effort.Medium, Effort.High],
+			// Thinking is optional here so the off path reaches the formatter's
+			// default tier instead of being clamped to the minimum by the stream.
+			requiresEffort: false,
+		},
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 1_048_576,
+		maxTokens: 65_536,
+	} satisfies ModelSpec<"google-gemini-cli">);
+}
+
 async function captureRequest(
 	model: Model<"google-gemini-cli">,
 	reasoning: Effort | undefined,
@@ -170,5 +193,74 @@ describe("google-gemini-cli effort-tier variant routing", () => {
 		const high = await captureRequest(unroutedModel(), Effort.High);
 		expect(high.body.model).toBe("gemini-2.5-flash");
 		expect(high.body.request?.generationConfig?.thinkingConfig?.thinkingBudget).toBeGreaterThan(0);
+	});
+
+	it("maps the bare gemini-3.6-flash public id to its thinking-tier wire id", async () => {
+		const high = await captureRequest(publicFlashModel(), Effort.High);
+		expect(high.body.model).toBe("gemini-3.6-flash-high");
+		expect(high.body.request?.generationConfig?.thinkingConfig?.thinkingLevel).toBe("HIGH");
+
+		const medium = await captureRequest(publicFlashModel(), Effort.Medium);
+		expect(medium.body.model).toBe("gemini-3.6-flash-medium");
+		expect(medium.body.request?.generationConfig?.thinkingConfig?.thinkingLevel).toBe("MEDIUM");
+
+		const low = await captureRequest(publicFlashModel(), Effort.Low);
+		expect(low.body.model).toBe("gemini-3.6-flash-low");
+		expect(low.body.request?.generationConfig?.thinkingConfig?.thinkingLevel).toBe("LOW");
+
+		const minimal = await captureRequest(publicFlashModel(), Effort.Minimal);
+		expect(minimal.body.model).toBe("gemini-3.6-flash-low");
+		expect(minimal.body.request?.generationConfig?.thinkingConfig?.thinkingLevel).toBe("MINIMAL");
+
+		// No thinking level supplied — the payload formatter defaults to medium.
+		const off = await captureRequest(publicFlashModel(), undefined);
+		expect(off.body.model).toBe("gemini-3.6-flash-medium");
+	});
+
+	it("leaves gemini-3.6-flash wire ids that already carry a thinking-level suffix untouched", () => {
+		// Bare public id with no thinking level supplied — defaults to medium.
+		const bare = buildRequest(publicFlashModel(), context, "proj-123", {}, true);
+		expect(bare.model).toBe("gemini-3.6-flash-medium");
+
+		// Catalog model with baked requestModelId: gemini-3.6-flash-low maps to high when thinking level is HIGH
+		const catalogModelWithLowDefault = buildModel({
+			id: "gemini-3.6-flash",
+			requestModelId: "gemini-3.6-flash-low",
+			name: "Gemini 3.6 Flash",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: "https://daily-cloudcode-pa.googleapis.com",
+			reasoning: true,
+			thinking: { mode: "google-level", efforts: [Effort.Minimal, Effort.Low, Effort.Medium, Effort.High] },
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1_048_576,
+			maxTokens: 65_536,
+		} satisfies ModelSpec<"google-gemini-cli">);
+		const highReq = buildRequest(
+			catalogModelWithLowDefault,
+			context,
+			"proj-123",
+			{ thinking: { enabled: true, level: "HIGH" } },
+			true,
+		);
+		expect(highReq.model).toBe("gemini-3.6-flash-high");
+
+		const suffixed = buildModel({
+			id: "gemini-3.6-flash-low",
+			requestModelId: "gemini-3.6-flash-low",
+			name: "Gemini 3.6 Flash",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: "https://daily-cloudcode-pa.googleapis.com",
+			reasoning: true,
+			thinking: { mode: "google-level", efforts: [Effort.Minimal, Effort.Low, Effort.Medium, Effort.High] },
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1_048_576,
+			maxTokens: 65_536,
+		} satisfies ModelSpec<"google-gemini-cli">);
+		const payload = buildRequest(suffixed, context, "proj-123", { thinking: { enabled: true, level: "HIGH" } }, true);
+		expect(payload.model).toBe("gemini-3.6-flash-low");
 	});
 });

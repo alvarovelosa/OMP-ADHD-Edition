@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the Antigravity payload formatter sending the public `gemini-3.6-flash` model id at its lowest thinking tier (`-low`) regardless of requested effort; it now maps to the tiered wire deployment (`gemini-3.6-flash-low`/`-medium`/`-high`) selected by thinking level, defaulting to `-medium`, while leaving ids that already carry a thinking-level suffix untouched.
+
 ## [17.2.6] - 2026-08-03
 
 ### Added
