@@ -13,6 +13,11 @@
 
 - Fixed "Show archived" toggle in the sessions dashboard by expanding query parameter handling so archived sessions are loaded when enabled.
 - Fixed the "Resume" button appearing unresponsive: the click now disables just the Resume button (label swaps to "Launching…") and shows a transient "Terminal launched" success banner for ~4 s after the spawn resolves, alongside the existing error block on failure.
+## [17.2.4] - 2026-08-01
+
+### Fixed
+
+- Fixed provider usage window stats silently showing no data during SQLite contention by installing a five-second busy timeout on read-only agent database connections ([#7300](https://github.com/can1357/oh-my-pi/issues/7300)).
 
 ## [17.1.2] - 2026-07-24
 
