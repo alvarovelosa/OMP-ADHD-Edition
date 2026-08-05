@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `build:bindings` invoking the resolved `napi` CLI's compiled `.exe` trampoline through `process.execPath` on Windows, which fed raw PE bytes to Bun's JS parser and aborted the build before it ran, leaving a stale addon missing newer exports (e.g. `FileLock`).
+- Fixed `installBinary` failing outright when the installed `.node` addon is held open by a live process on Windows (e.g. this very dev process); it now renames the in-use file aside instead of requiring delete access, and `cleanupStaleTemps` sweeps the renamed file on a later run.
+
 ## [17.2.6] - 2026-08-03
 
 ### Added

@@ -66,17 +66,25 @@ async function installBinary(src: string, dest: string): Promise<void> {
 		// Atomic rename - works even if dest is loaded on Linux/macOS (old inode stays valid)
 		await fs.rename(tempPath, dest);
 	} catch {
-		// On Windows, loaded DLLs cannot be overwritten via rename
-		// Try delete-then-rename as fallback
+		// On Windows, loaded DLLs cannot be overwritten via rename, and cannot
+		// be deleted while a process still holds them mapped (e.g. this very
+		// dev process, if it already loaded the addon it is rebuilding).
+		// Renaming the in-use file out of the way works even while mapped
+		// (only delete/overwrite requires no open handles); `cleanupStaleTemps`
+		// sweeps `.old.` entries on a later run once nothing holds them.
 		try {
 			await fs.unlink(dest);
 		} catch (unlinkErr) {
 			if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") {
-				await fs.unlink(tempPath).catch(() => {});
-				const isWindows = process.platform === "win32";
-				throw new Error(
-					`Cannot replace ${path.basename(dest)}${isWindows ? " (file may be in use - close any running processes)" : ""}: ${(unlinkErr as Error).message}`,
-				);
+				try {
+					await fs.rename(dest, `${dest}.old.${Date.now()}`);
+				} catch (renameErr) {
+					await fs.unlink(tempPath).catch(() => {});
+					const isWindows = process.platform === "win32";
+					throw new Error(
+						`Cannot replace ${path.basename(dest)}${isWindows ? " (file may be in use - close any running processes)" : ""}: ${(renameErr as Error).message}`,
+					);
+				}
 			}
 		}
 		try {
@@ -186,10 +194,17 @@ function tailSection(label: string, text: string): string {
 }
 
 try {
-	// The package declares Bun as its build runtime. Invoke napi's JavaScript
-	// entry through this Bun process instead of its `#!/usr/bin/env node` shim so
-	// an old host Node installation cannot make an otherwise supported Bun build fail.
-	const buildResult = await $`${process.execPath} ${napiBin} ${napiArgs}`.nothrow();
+	// The package declares Bun as its build runtime. On POSIX, `napi` resolves
+	// to the JS CLI entry (shebang `#!/usr/bin/env node`); invoke it through
+	// this Bun process instead of its shebang so an old host Node installation
+	// cannot make an otherwise supported Bun build fail. On Windows, Bun's
+	// bin-linking resolves `napi` to a compiled `.exe` trampoline, not JS
+	// source — feeding its bytes to `bun.exe` as a script fails, so run it
+	// directly; the trampoline already launches via the runtime that linked it.
+	const isNativeTrampoline = napiBin.toLowerCase().endsWith(".exe");
+	const buildResult = isNativeTrampoline
+		? await $`${napiBin} ${napiArgs}`.nothrow()
+		: await $`${process.execPath} ${napiBin} ${napiArgs}`.nothrow();
 	if (buildResult.exitCode !== 0) {
 		const stdout = buildResult.stdout?.toString("utf-8") ?? "";
 		const stderr = buildResult.stderr?.toString("utf-8") ?? "";
