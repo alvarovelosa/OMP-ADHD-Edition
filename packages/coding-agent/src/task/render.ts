@@ -34,6 +34,7 @@ import {
 	parseFindingDetails,
 	type SubmitReviewDetails,
 } from "../tools/review";
+import { type DiffFileRanges, getDiffFileRangesForAssignment, verifyFindingPosition } from "../tools/review-verify";
 import { framedBlock, renderStatusLine } from "../tui";
 import { repairDoubleEncodedJsonString } from "./repair-args";
 import { subprocessToolRegistry } from "./subprocess-tool-registry";
@@ -1022,6 +1023,7 @@ function renderAgentProgress(
 						continuePrefix,
 						expanded,
 						theme,
+						progress.assignment,
 					),
 				);
 				return lines; // Review result handles its own rendering
@@ -1032,7 +1034,7 @@ function renderAgentProgress(
 			if (reviewData.length > 0) {
 				const summary = reviewData[reviewData.length - 1];
 				const findings: FindingDetails[] = [];
-				lines.push(...renderReviewResult(summary, findings, continuePrefix, expanded, theme));
+				lines.push(...renderReviewResult(summary, findings, continuePrefix, expanded, theme, progress.assignment));
 				return lines; // Review result handles its own rendering
 			}
 		}
@@ -1120,6 +1122,7 @@ function renderReviewResult(
 	continuePrefix: string,
 	expanded: boolean,
 	theme: Theme,
+	assignment?: string,
 ): string[] {
 	const lines: string[] = [];
 
@@ -1157,7 +1160,9 @@ function renderReviewResult(
 	lines.push(`${continuePrefix}${formatFindingSummary(findings, theme)}`);
 
 	if (findings.length > 0) {
-		lines.push(...renderFindings(findings, continuePrefix, expanded, theme));
+		lines.push(
+			...renderFindings(findings, continuePrefix, expanded, theme, getDiffFileRangesForAssignment(assignment)),
+		);
 	}
 
 	return lines;
@@ -1166,7 +1171,13 @@ function renderReviewResult(
 /**
  * Render review findings list.
  */
-function renderFindings(findings: FindingDetails[], continuePrefix: string, expanded: boolean, theme: Theme): string[] {
+function renderFindings(
+	findings: FindingDetails[],
+	continuePrefix: string,
+	expanded: boolean,
+	theme: Theme,
+	diffRanges: DiffFileRanges | undefined,
+): string[] {
 	const lines: string[] = [];
 
 	// Sort by priority (lower = more severe) when collapsed to show most important first
@@ -1185,9 +1196,11 @@ function renderFindings(findings: FindingDetails[], continuePrefix: string, expa
 		const rawTitle = sanitizeText(finding.title?.replace(/^\[P\d\]\s*/, "") ?? "Untitled");
 		const titleText = replaceTabs(rawTitle).replace(/[\r\n]+/g, " ");
 		const loc = `${path.basename(sanitizeText(finding.file_path || "<unknown>"))}:${finding.line_start}`;
+		const unverified = diffRanges && verifyFindingPosition(diffRanges, finding) === "unverified";
+		const positionBadge = unverified ? ` ${theme.fg("warning", `${theme.status.warning} unverified position`)}` : "";
 
 		lines.push(
-			`${continuePrefix}${findingPrefix} ${theme.fg(color, `[${finding.priority}]`)} ${titleText} ${theme.fg("dim", loc)}`,
+			`${continuePrefix}${findingPrefix} ${theme.fg(color, `[${finding.priority}]`)} ${titleText} ${theme.fg("dim", loc)}${positionBadge}`,
 		);
 
 		// Show body when expanded
@@ -1295,7 +1308,14 @@ function renderAgentResult(
 
 	if (incrementalReview) {
 		lines.push(
-			...renderReviewResult(incrementalReview.summary, incrementalReview.findings, continuePrefix, expanded, theme),
+			...renderReviewResult(
+				incrementalReview.summary,
+				incrementalReview.findings,
+				continuePrefix,
+				expanded,
+				theme,
+				result.assignment,
+			),
 		);
 		return lines;
 	}
@@ -1309,7 +1329,7 @@ function renderAgentResult(
 	if (submitReviewData) {
 		const summary = submitReviewData[submitReviewData.length - 1];
 		const findings: FindingDetails[] = [];
-		lines.push(...renderReviewResult(summary, findings, continuePrefix, expanded, theme));
+		lines.push(...renderReviewResult(summary, findings, continuePrefix, expanded, theme, result.assignment));
 		return lines;
 	}
 

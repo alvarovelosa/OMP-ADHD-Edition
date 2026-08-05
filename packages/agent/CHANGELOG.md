@@ -5,6 +5,12 @@
 ### Fixed
 
 - The compaction short-summary prompt now forbids the model from wrapping its output in `<summary>` or any other XML/HTML tag, preventing the `<summary>…</summary>` context wrapper from leaking into session titles via the `shortSummary` fallback consumed by `sessionDisplayName()`.
+## [17.2.9] - 2026-08-05
+
+### Fixed
+
+- Preserved queued steering and follow-up messages when a continuation is cancelled before or during pre-dequeue hooks, and propagated the caller's cancellation signal through every continuation model-call loop.
+
 ## [17.2.6] - 2026-08-03
 
 ### Fixed

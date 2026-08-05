@@ -6,6 +6,22 @@
 
 - Fixed `build:bindings` invoking the resolved `napi` CLI's compiled `.exe` trampoline through `process.execPath` on Windows, which fed raw PE bytes to Bun's JS parser and aborted the build before it ran, leaving a stale addon missing newer exports (e.g. `FileLock`).
 - Fixed `installBinary` failing outright when the installed `.node` addon is held open by a live process on Windows (e.g. this very dev process); it now renames the in-use file aside instead of requiring delete access, and `cleanupStaleTemps` sweeps the renamed file on a later run.
+## [17.2.9] - 2026-08-05
+
+### Changed
+
+- Bounded fuzzy-find scored-match retention to the top-K results (worst-first heap) instead of collecting and fully sorting every hit; ranking and totals are unchanged ([#7415](https://github.com/can1357/oh-my-pi/issues/7415)).
+
+### Fixed
+
+- Fixed newer OMP versions deleting a freshly created older native addon cache directory during concurrent startup, which could interrupt extraction with `ENOENT`.
+
+## [17.2.7] - 2026-08-03
+
+### Added
+
+- Added missing procps/BSD output format specifiers and aliases to the in-process `ps` shell builtin, including support for columns like `tpgid`, `pri`, `flags`, `wchan`, and various user/group/time fields.
+- Updated `ps -j` to include the TPGID column, `ps -l` to display the single-character S column, and the STAT column to support the `+` foreground process group flag.
 
 ## [17.2.6] - 2026-08-03
 

@@ -139,11 +139,11 @@ export async function runStatsCommand(cmd: StatsCommandArgs): Promise<void> {
 
 	// Start the dashboard server
 	await Settings.init();
-	const { port } = await startServer(cmd.port, { apiHandler: handleDashboardApiRequest });
-	console.log(chalk.green(`Dashboard available at: http://localhost:${port}`));
+	const { hostname, port } = await startServer(cmd.port, { apiHandler: handleDashboardApiRequest });
+	const url = `http://${hostname}:${port}`;
+	console.log(chalk.green(`Dashboard available at: ${url}`));
 
 	// Open browser
-	const url = `http://localhost:${port}`;
 	openPath(url);
 
 	console.log("Press Ctrl+C to stop\n");

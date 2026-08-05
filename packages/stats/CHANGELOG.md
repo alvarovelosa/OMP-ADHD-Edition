@@ -13,6 +13,12 @@
 
 - Fixed "Show archived" toggle in the sessions dashboard by expanding query parameter handling so archived sessions are loaded when enabled.
 - Fixed the "Resume" button appearing unresponsive: the click now disables just the Resume button (label swaps to "Launching…") and shows a transient "Terminal launched" success banner for ~4 s after the spawn resolves, alongside the existing error block on failure.
+## [17.2.9] - 2026-08-05
+
+### Fixed
+
+- Restricted the stats dashboard to IPv4 loopback and removed wildcard CORS access to its API ([#7633](https://github.com/can1357/oh-my-pi/issues/7633)).
+
 ## [17.2.4] - 2026-08-01
 
 ### Fixed
