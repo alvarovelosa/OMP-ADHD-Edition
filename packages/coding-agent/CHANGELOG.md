@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed the advisor treating a provider empty response (e.g. "Cloud Code Assist API returned an empty response") as a retriable failure: it now completes as a silent review instead of burning the retry budget and warning "Advisor unavailable" after consecutive empty cycles ([#5216](https://github.com/can1357/oh-my-pi/issues/5216)).
+- Fixed `mnemopi.dbPath` being treated as configured when saved as an empty string (e.g. a settings editor clearing the field instead of unsetting it): Mnemopi now falls back to the default database location instead of resolving to a blank path, whose directory (`.`) crashed `mkdirSync` and silently disabled the memory backend on startup.
 ## [17.2.9] - 2026-08-05
 
 ### Breaking Changes

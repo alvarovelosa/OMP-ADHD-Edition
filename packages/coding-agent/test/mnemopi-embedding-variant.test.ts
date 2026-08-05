@@ -59,3 +59,24 @@ describe("loadMnemopiConfig embedding variant resolution", () => {
 		}
 	});
 });
+
+// Settings editors that clear a field write "" rather than deleting the key,
+// and `configured ?? fallback` does not treat "" as absent - only null/undefined.
+// A blank mnemopi.dbPath must fall back to the default location instead of
+// resolving to "" (whose dirname is "." and crashes mkdirSync on Windows).
+describe("loadMnemopiConfig dbPath resolution", () => {
+	function dbPathFor(overrides: Record<string, unknown>): string {
+		const settings = Settings.isolated({ "mnemopi.scoping": "global", ...overrides });
+		return loadMnemopiConfig(settings, "/tmp/mnemopi-dbpath-test").dbPath;
+	}
+
+	it("ignores a blank dbPath and falls back to the default location", () => {
+		const fallback = dbPathFor({});
+		expect(dbPathFor({ "mnemopi.dbPath": "" })).toBe(fallback);
+		expect(dbPathFor({ "mnemopi.dbPath": "   " })).toBe(fallback);
+	});
+
+	it("honors an explicit non-blank dbPath", () => {
+		expect(dbPathFor({ "mnemopi.dbPath": "/custom/path/mnemopi.db" })).toBe("/custom/path/mnemopi.db");
+	});
+});
