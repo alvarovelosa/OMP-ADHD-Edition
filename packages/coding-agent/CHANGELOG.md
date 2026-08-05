@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the advisor treating a provider empty response (e.g. "Cloud Code Assist API returned an empty response") as a retriable failure: it now completes as a silent review instead of burning the retry budget and warning "Advisor unavailable" after consecutive empty cycles ([#5216](https://github.com/can1357/oh-my-pi/issues/5216)).
+
 ## [17.2.6] - 2026-08-03
 
 ### Added

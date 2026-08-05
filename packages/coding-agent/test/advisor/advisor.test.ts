@@ -3496,6 +3496,89 @@ describe("advisor", () => {
 			expect(runtime.backlog).toBe(0);
 		});
 
+		it("treats a provider empty response as a valid silent review — no retry storm, no unavailable warning", async () => {
+			// The Gemini providers throw `ProviderResponseError("… returned an empty
+			// response", { kind: "empty-body" })` after retrying a content-less
+			// completion internally (MAX_EMPTY_STREAM_RETRIES × per prompt). `Agent`
+			// flattens that to stopReason:"error" + state.error, so the advisor sees
+			// a failed turn that is semantically a clean empty stop — which
+			// `getAdvisorTurnError` accepts as a deliberate silent review. Three
+			// consecutive empty cycles used to trip the drop-after-3 notify path and
+			// spam "Advisor unavailable" (the recurring `google-antigravity /
+			// gemini-3.6-flash` warning); each one must now complete as a quiet review.
+			const turnErrors: unknown[] = [];
+			const failures: unknown[] = [];
+			const adviceNotes: string[] = [];
+			const state: { messages: AgentMessage[]; error?: string } = { messages: [] };
+			const rollbackCalls: number[] = [];
+			let promptCalls = 0;
+			const agent: AdvisorAgent = {
+				prompt: async input => {
+					promptCalls++;
+					state.messages.push({ role: "user", content: input, timestamp: promptCalls * 2 - 1 } as AgentMessage);
+					state.messages.push({
+						role: "assistant",
+						content: [],
+						api: "google-gemini-cli",
+						provider: "google-antigravity",
+						model: "gemini-3.6-flash",
+						usage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 1 },
+						stopReason: "error",
+						errorMessage: "Cloud Code Assist API returned an empty response",
+						errorId: AIError.create(AIError.Flag.Transient),
+						timestamp: promptCalls * 2,
+					} as unknown as AgentMessage);
+					state.error = "Cloud Code Assist API returned an empty response";
+				},
+				abort: () => {},
+				reset: () => {
+					state.messages.length = 0;
+					state.error = undefined;
+				},
+				rollbackTo: count => {
+					rollbackCalls.push(count);
+					state.messages.length = count;
+					state.error = undefined;
+				},
+				state,
+			};
+			const messages: AgentMessage[] = [{ role: "user", content: "turn-0", timestamp: 1 } as AgentMessage];
+			const host: AdvisorRuntimeHost = {
+				snapshotMessages: () => messages,
+				enqueueAdvice: note => adviceNotes.push(note),
+				onTurnError: error => {
+					turnErrors.push(error);
+				},
+				notifyFailure: error => {
+					failures.push(error);
+				},
+			};
+			const runtime = new AdvisorRuntime(agent, host, 0);
+
+			for (let i = 0; i < 3; i++) {
+				if (i > 0) messages.push({ role: "user", content: `turn-${i}`, timestamp: i + 1 } as AgentMessage);
+				runtime.onTurnEnd(messages);
+				// Failure-path turns release catch-up waiters immediately (the primary
+				// never parks on a failing advisor), so waitForCatchup cannot act as a
+				// settle barrier here — poll the actual drained state instead.
+				await settleUntil(() => runtime.backlog === 0);
+			}
+
+			// One prompt per turn — the advisor's own retry budget is never burned on
+			// a response the provider already retried internally. The host recovery
+			// hook is still consulted each time (a configured fallback chain must
+			// engage on empty-body, #1034), but it declines here.
+			expect(promptCalls).toBe(3);
+			expect(turnErrors).toHaveLength(3);
+			// The pre-fix behavior warned on the 3rd consecutive empty cycle and
+			// dropped the backlog; the fixed behavior never notifies.
+			expect(failures).toEqual([]);
+			expect(adviceNotes).toEqual([]);
+			expect(rollbackCalls).toEqual([0, 0, 0]);
+			expect(state.messages).toHaveLength(0);
+			expect(runtime.backlog).toBe(0);
+		});
+
 		it("strips echoed thinking after a classifier refusal and succeeds without a notice", async () => {
 			const promptInputs: string[] = [];
 			const failures: unknown[] = [];

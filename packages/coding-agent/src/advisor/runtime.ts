@@ -1051,7 +1051,34 @@ export class AdvisorRuntime {
 						});
 						continue;
 					}
-					if (AIError.isUsageLimit(err)) {
+					// An empty provider response (kind `empty-body`, e.g. "Cloud Code
+					// Assist API returned an empty response") is a content-less
+					// completion the provider already retried up to MAX_EMPTY_STREAM_RETRIES
+					// times before erroring — semantically the clean empty stop that
+					// `getAdvisorTurnError` accepts above, just surfaced as
+					// stopReason:"error". The advisor's verifier prompt explicitly
+					// prefers silence, so this completes the review: reset the failure
+					// streak and accept the batch (backlog decremented, no requeue, no
+					// retry budget burned, no "Advisor unavailable" warning — quiet
+					// sessions are valid sessions, #5212/#5216). A configured fallback
+					// chain still wins (recovered above) so #1034 keeps engaging.
+					// Fall through to the shared success accounting — the batch is
+					// consumed (backlog decremented) exactly like a clean silent stop.
+					if (isAdvisorEmptyResponseFailure(err, terminalFailure)) {
+						this.#failing = false;
+						this.#consecutiveFailures = 0;
+						this.#failureNotified = false;
+						this.#droppedBacklogs = 0;
+						this.#consecutiveQuarantines = 0;
+						if (this.host.onTurnSuccess) {
+							try {
+								await raceWithSignal(Promise.resolve(this.host.onTurnSuccess()), iterationAbort.signal);
+							} catch (hookErr) {
+								logger.debug("advisor onTurnSuccess hook failed", { err: String(hookErr) });
+							}
+						}
+						success = true;
+					} else if (AIError.isUsageLimit(err)) {
 						// Host recovery (credential switch / fallback chain) declined:
 						// pause on the quota latch instead of burning retries — provider
 						// quota windows (5h/7d) outlast any retry budget. The batch is
@@ -1076,8 +1103,7 @@ export class AdvisorRuntime {
 							logger.warn("advisor quota notification failed", { err: String(notifyErr) });
 						}
 						break;
-					}
-					if (!terminalFailureRetriable) {
+					} else if (!terminalFailureRetriable) {
 						logger.warn("advisor terminal failure is non-retriable; dropping bounded batch");
 						this.#notifyFailureOnce(err);
 						this.#consecutiveFailures = 0;
@@ -1171,6 +1197,28 @@ function getAdvisorTurnError(messages: readonly AgentMessage[]): Error | undefin
 	if (messages.length === 0) return undefined;
 	if (messages.some(message => message.role === "assistant")) return undefined;
 	return new Error("Advisor turn ended without an assistant response");
+}
+
+/** Matches the Google providers' stable empty-response failure strings
+ *  ("Cloud Code Assist API returned an empty response", "Google API returned
+ *  an empty response (finishReason STOP with no content) after N attempts"). */
+const ADVISOR_EMPTY_RESPONSE_PATTERN = /\bempty response\b/i;
+
+/**
+ * Whether a failed advisor turn is the provider's empty-response failure: a
+ * content-less completion (finishReason STOP with no text/tool calls) that the
+ * provider already retried internally before giving up and erroring. The
+ * advisor's verifier prompt explicitly prefers silence, so an empty completion
+ * is a valid silent review — never a retry-budget burn or a user warning.
+ * Detection is belt-and-braces: the structured kind when the original
+ * ProviderResponseError survives, and the stable provider message otherwise
+ * (Agent.#runLoop flattens failures to a string on `state.error`, so the kind
+ * is usually lost by the time this catch block sees it).
+ */
+function isAdvisorEmptyResponseFailure(err: unknown, terminalFailure: AssistantMessage | undefined): boolean {
+	if (err instanceof AIError.ProviderResponseError && err.kind === "empty-body") return true;
+	const message = terminalFailure?.errorMessage ?? (err instanceof Error ? err.message : String(err));
+	return ADVISOR_EMPTY_RESPONSE_PATTERN.test(message);
 }
 
 type TextualContent = string | readonly (TextContent | ImageContent)[];
