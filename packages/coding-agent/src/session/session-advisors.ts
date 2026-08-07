@@ -339,6 +339,9 @@ export class SessionAdvisors {
 				logger.warn("advisor onTurnEnd threw; delta dropped", { advisor: advisor.name, err: String(error) });
 			}
 		}
+		if (!willContinue) {
+			this.flushPendingAdvisorAsides();
+		}
 		const syncBacklog = this.#host.settings.get("advisor.syncBacklog");
 		if (this.#advisors.length === 0 || syncBacklog === "off") return;
 		const threshold = Number.parseInt(syncBacklog, 10);
@@ -543,6 +546,7 @@ export class SessionAdvisors {
 		this.#advisorPrimaryTurnsCompleted = 0;
 		this.#advisorInterruptImmuneTurnStart = undefined;
 		this.#advisorAutoResumeSuppressed = false;
+		this.flushPendingAdvisorAsides();
 		this.#host.yieldQueue.clear("advisor");
 		this.#host.extractQueuedAdvisorCards();
 		this.#host.dropPendingAdvisorCards();
@@ -1002,6 +1006,9 @@ export class SessionAdvisors {
 		});
 		if (channel === "aside") {
 			this.#host.yieldQueue.enqueue("advisor", { note, severity, advisor: source });
+			if (!this.#host.agent.state.isStreaming) {
+				this.flushPendingAdvisorAsides();
+			}
 			return;
 		}
 		const notes: AdvisorNote[] = [{ note, severity, advisor: source }];
@@ -1061,6 +1068,18 @@ export class SessionAdvisors {
 		for (const a of this.#advisors) a.runtime.reset();
 	}
 
+	/**
+	 * Flushes any pending non-interrupting advisor asides in the yield queue into
+	 * visible preserved advisor cards.
+	 */
+	flushPendingAdvisorAsides(): void {
+		const thunks = this.#host.yieldQueue.drainLazy();
+		for (const thunk of thunks) {
+			const message = thunk();
+			if (message?.role !== "custom" || message.customType !== "advisor") continue;
+			this.#host.preserveAdvisorCard(message);
+		}
+	}
 	#stopAdvisorRuntime(): void {
 		// Detach each recorder feed BEFORE aborting its advisor agent: dispose() aborts
 		// the loop, and an abort emits a final `message_end` we must not enqueue against
@@ -1076,6 +1095,7 @@ export class SessionAdvisors {
 			closes.push(a.recorderClosed);
 		}
 		this.#advisorRecorderClosed = Promise.all(closes).then(() => {});
+		this.flushPendingAdvisorAsides();
 		this.#advisors = [];
 		this.#advisorYieldQueueUnsubscribe?.();
 		this.#advisorYieldQueueUnsubscribe = undefined;

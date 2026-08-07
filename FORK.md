@@ -32,6 +32,7 @@ Upstream moves fast; this fork tracks it via periodic merges (see
   `/resume #N`.
 - **`/models` and `/chat/completions` route aliases** (`packages/ai`) — added
   to the auth-gateway HTTP server (`src/auth-gateway/server.ts`).
+- **Advisor Aside Flushing** (`packages/coding-agent`) — non-interrupting advisor asides (e.g. `nit` notes queued with `skipIdleFlush`) are preserved as visible advisor cards when turning idle, compacting, or stopping runtime, so no accepted advice is silently lost.
 
 Detail and exact behavior for each of these lives in the owning package's
 `CHANGELOG.md [Unreleased]` section — check there before touching related
@@ -46,6 +47,14 @@ not the source of truth.
 | `packages/coding-agent` | Session numbering logic |
 | `packages/ai` | Auth-gateway route aliases |
 
+## Windows dev notes
+
+- `packages/utils/test/browsers.test.ts`'s `install streams and extracts ...`
+  test extracts a symlink from a fixture ZIP and therefore needs
+  `SeCreateSymbolicLinkPrivilege`. Run it from an **elevated** terminal
+  (`bun test test/browsers.test.ts` in an admin shell); it fails `EPERM` in a
+  normal shell. Developer Mode would also grant this but is deliberately not
+  enabled on this machine.
 ## Updating this file
 
 Add a line here when a fork-specific feature ships (i.e. it has a
