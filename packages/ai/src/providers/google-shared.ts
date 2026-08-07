@@ -818,8 +818,6 @@ export function buildGoogleGenerateContentParams<T extends "google-generative-ai
 	if (options.topP !== undefined) generationConfig.topP = options.topP;
 	if (options.topK !== undefined) generationConfig.topK = options.topK;
 	if (options.minP !== undefined) generationConfig.minP = options.minP;
-	if (options.presencePenalty !== undefined) generationConfig.presencePenalty = options.presencePenalty;
-	if (options.repetitionPenalty !== undefined) generationConfig.repetitionPenalty = options.repetitionPenalty;
 
 	const config: GenerateContentConfig = {
 		...(Object.keys(generationConfig).length > 0 && generationConfig),
@@ -1095,8 +1093,6 @@ function paramsToWireBody(params: GenerateContentParameters): Record<string, unk
 	if (config.topK !== undefined) gen.topK = config.topK;
 	if (config.candidateCount !== undefined) gen.candidateCount = config.candidateCount;
 	if (config.stopSequences !== undefined) gen.stopSequences = config.stopSequences;
-	if (config.presencePenalty !== undefined) gen.presencePenalty = config.presencePenalty;
-	if (config.frequencyPenalty !== undefined) gen.frequencyPenalty = config.frequencyPenalty;
 	if (config.seed !== undefined) gen.seed = config.seed;
 	if (config.responseMimeType !== undefined) gen.responseMimeType = config.responseMimeType;
 	if (config.responseSchema !== undefined) gen.responseSchema = config.responseSchema;
@@ -1105,7 +1101,6 @@ function paramsToWireBody(params: GenerateContentParameters): Record<string, unk
 	if (config.thinkingConfig !== undefined) gen.thinkingConfig = config.thinkingConfig;
 	const generationConfig = config as unknown as { minP?: number; repetitionPenalty?: number };
 	if (generationConfig.minP !== undefined) gen.minP = generationConfig.minP;
-	if (generationConfig.repetitionPenalty !== undefined) gen.repetitionPenalty = generationConfig.repetitionPenalty;
 	if (Object.keys(gen).length > 0) body.generationConfig = gen;
 	return body;
 }

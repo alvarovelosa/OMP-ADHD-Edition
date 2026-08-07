@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/exit` now archives the current session on the way out (moving it into the same archived-sessions location as the stats dashboard's manual "Archive" action), unlike `/quit` or Ctrl+C/Ctrl+D which leave it resumable. Archiving failures are logged and fall back to the normal resume hint.
+
 ### Fixed
 
 - Fixed the advisor treating a provider empty response (e.g. "Cloud Code Assist API returned an empty response") as a retriable failure: it now completes as a silent review instead of burning the retry budget and warning "Advisor unavailable" after consecutive empty cycles ([#5216](https://github.com/can1357/oh-my-pi/issues/5216)).

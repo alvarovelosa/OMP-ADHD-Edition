@@ -1729,8 +1729,14 @@ function mapOptionsForApi<TApi extends Api>(
 			// Gemini 3+ models use thinkingLevel exclusively instead of thinkingBudget.
 			// https://ai.google.dev/gemini-api/docs/thinking#set-budget
 			if (googleModel.thinking?.mode === "google-level") {
+				const thinkingBudget =
+					options?.thinkingBudgets?.[effort] ??
+					googleModel.thinking?.effortBudgets?.[effort] ??
+					GOOGLE_THINKING[effort];
+				const maxTokens = maxTokensWithThinkingBudget(base.maxTokens, googleModel.maxTokens, thinkingBudget);
 				return castApi<"google-generative-ai">({
 					...base,
+					...(maxTokens ? { maxTokens } : {}),
 					serviceTier: options?.serviceTier,
 					thinking: {
 						enabled: true,
@@ -1762,8 +1768,14 @@ function mapOptionsForApi<TApi extends Api>(
 
 				// Gemini 3+ models use thinkingLevel instead of thinkingBudget
 				if (model.thinking?.mode === "google-level") {
+					const thinkingBudget =
+						options?.thinkingBudgets?.[effort] ??
+						model.thinking?.effortBudgets?.[effort] ??
+						GOOGLE_THINKING[effort];
+					const maxTokens = maxTokensWithThinkingBudget(base.maxTokens, model.maxTokens, thinkingBudget);
 					return castApi<"google-gemini-cli">({
 						...base,
+						...(maxTokens ? { maxTokens } : {}),
 						requestModelId: resolveWireModelId(model, effort),
 						thinking: {
 							enabled: true,

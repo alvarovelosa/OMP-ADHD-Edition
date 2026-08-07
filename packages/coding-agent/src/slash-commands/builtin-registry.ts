@@ -244,6 +244,14 @@ const shutdownHandlerTui = (_command: ParsedSlashCommand, runtime: TuiSlashComma
 	return commandConsumed();
 };
 
+// `/exit` (unlike `/quit` or Ctrl+C/Ctrl+D) is treated as an explicit "I'm done with
+// this session" signal, so it archives the session on the way out.
+const exitHandlerTui = (_command: ParsedSlashCommand, runtime: TuiSlashCommandRuntime): SlashCommandResult => {
+	runtime.ctx.editor.setText("");
+	void runtime.ctx.shutdown({ archiveSession: true });
+	return commandConsumed();
+};
+
 async function handleUsageResetCommand(
 	arg: string,
 	session: AgentSession,
@@ -2119,7 +2127,7 @@ const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<SlashCommandSpec> = [
 	{
 		name: "exit",
 		description: "Exit the application",
-		handleTui: shutdownHandlerTui,
+		handleTui: exitHandlerTui,
 	},
 	{
 		name: "marketplace",

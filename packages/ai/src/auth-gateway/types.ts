@@ -129,6 +129,13 @@ export interface AuthGatewayFormatModule {
 		control?: AuthGatewayStreamControl,
 	): ReadableStream<Uint8Array>;
 	/**
+	 * Content-Type for the streaming response body. Defaults to
+	 * `text/event-stream; charset=utf-8` (SSE) when omitted — every existing
+	 * format module speaks SSE. NDJSON-framed formats (Ollama) set this to
+	 * `application/x-ndjson`.
+	 */
+	streamContentType?: string;
+	/**
 	 * Emit a protocol-specific error envelope. OpenAI returns
 	 * `{ error: { message, type } }`; Anthropic returns
 	 * `{ type: "error", error: { type, message } }`.

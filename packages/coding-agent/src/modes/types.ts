@@ -229,7 +229,7 @@ export interface InteractiveModeContext {
 	// Lifecycle
 	init(options?: InteractiveModeInitOptions): Promise<void>;
 	playWelcomeIntro(): void;
-	shutdown(): Promise<void>;
+	shutdown(options?: { archiveSession?: boolean }): Promise<void>;
 	checkShutdownRequested(): Promise<void>;
 
 	// Extension UI integration

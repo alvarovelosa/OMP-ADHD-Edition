@@ -109,6 +109,7 @@ import { HistoryStorage } from "../session/history-storage";
 import type { SessionContext } from "../session/session-context";
 import { getRecentSessions } from "../session/session-listing";
 import type { SessionManager } from "../session/session-manager";
+import { archiveSessionAtPath } from "../session/sessions-http-api";
 import type { ShakeMode } from "../session/shake-types";
 import { BUILTIN_SLASH_COMMAND_RESERVED_NAMES, buildTuiBuiltinSlashCommands } from "../slash-commands/builtin-registry";
 import { formatDuration } from "../slash-commands/helpers/format";
@@ -4014,7 +4015,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 	}
 
-	async shutdown(): Promise<void> {
+	async shutdown(options?: { archiveSession?: boolean }): Promise<void> {
 		if (this.#isShuttingDown) return;
 		this.#isShuttingDown = true;
 
@@ -4064,10 +4065,21 @@ export class InteractiveMode implements InteractiveModeContext {
 		popTerminalTitle();
 		this.stop();
 
-		// Print resumption hint if this is a persisted session
+		// Print resumption hint if this is a persisted session - unless the caller
+		// requested archiving (e.g. `/exit`), in which case the session moves out of
+		// the resumable set and the hint would be immediately stale.
 		const sessionId = this.sessionManager.getSessionId();
 		const sessionFile = this.sessionManager.getSessionFile();
-		if (sessionId && sessionFile) {
+		let archived = false;
+		if (options?.archiveSession && sessionFile) {
+			try {
+				await archiveSessionAtPath(sessionFile);
+				archived = true;
+			} catch (err) {
+				logger.warn("Failed to archive session on /exit", { sessionFile, error: String(err) });
+			}
+		}
+		if (!archived && sessionId && sessionFile) {
 			process.stderr.write(`\n${chalk.dim(`Resume this session with ${APP_NAME} --resume ${sessionId}`)}\n`);
 		}
 

@@ -13,12 +13,15 @@
  *   GET  /v1/usage                         → aggregated provider usage (5-min per-credential cache via AuthStorage)
  *   GET  /v1/credentials/check             → per-credential auth probe (diagnose 401s in a multi-account pool)
  *   GET  /v1/models (and /models)         → list known models from the registry
+ *   GET  /api/tags                         → Ollama-compatible model listing
  *   POST /v1/chat/completions (and /chat/completions) → OpenAI chat-completions in/out
  *   POST /v1/messages                      → Anthropic messages in/out
  *   POST /v1/responses                     → OpenAI Responses in/out
+ *   POST /api/chat                         → Ollama chat in/out (streaming + non-streaming)
  */
 
 import { Effort } from "@oh-my-pi/pi-catalog/effort";
+import { modelFamilyToken } from "@oh-my-pi/pi-catalog/identity/family";
 import { extractHttpStatusFromError, extractRetryHint, logger } from "@oh-my-pi/pi-utils";
 import type { ApiKeyResolver } from "../auth-retry";
 import type { AuthStorage } from "../auth-storage";
@@ -26,6 +29,7 @@ import * as AIError from "../error";
 import { classifyGatewayError } from "../error/gateway";
 import { isUsageLimitOutcome } from "../error/rate-limit";
 import * as anthropicMessages from "../providers/anthropic-messages-server";
+import * as ollamaChat from "../providers/ollama-chat-server";
 import * as openaiChat from "../providers/openai-chat-server";
 import * as openaiResponses from "../providers/openai-responses-server";
 import * as piNative from "../providers/pi-native-server";
@@ -75,6 +79,7 @@ const FORMAT_ROUTES: Record<string, { module: FormatModule; label: string }> = {
 	"/chat/completions": { module: openaiChat, label: "openai-chat" },
 	"/v1/messages": { module: anthropicMessages, label: "anthropic-messages" },
 	"/v1/responses": { module: openaiResponses, label: "openai-responses" },
+	"/api/chat": { module: ollamaChat, label: "ollama-chat" },
 };
 
 // (passthrough fast-path removed — it bypassed pi-ai provider logic, in
@@ -127,14 +132,21 @@ function deriveSessionId(modelId: string, context: Context): string {
 	return deterministicUuid(seed);
 }
 
-function buildStreamOptions(parsed: ParsedFormatRequest, api: Api, signal: AbortSignal): SimpleStreamOptions {
+function isGeminiModel(model: Model<Api>): boolean {
+	const provider = model.provider.toLowerCase();
+	if (provider.includes("google") || provider.includes("gemini")) return true;
+	const id = model.id.toLowerCase();
+	return id.includes("gemini") || modelFamilyToken(model.id) === "gemini";
+}
+
+function buildStreamOptions(parsed: ParsedFormatRequest, model: Model<Api>, signal: AbortSignal): SimpleStreamOptions {
 	const opts: SimpleStreamOptions = { signal };
 	const { options } = parsed;
 	// Codex backend rejects every sampling control with
 	// `Unsupported parameter: …` (#3117). Strip the full set for that one
 	// provider; everything else is harmless to forward — `streamSimple` ignores
 	// what the underlying provider doesn't honour.
-	const isCodex = api === "openai-codex-responses";
+	const isCodex = model.api === "openai-codex-responses";
 	if (options.maxOutputTokens !== undefined) opts.maxTokens = options.maxOutputTokens;
 	if (options.temperature !== undefined && !isCodex) opts.temperature = options.temperature;
 	if (options.topP !== undefined && !isCodex) opts.topP = options.topP;
@@ -154,9 +166,13 @@ function buildStreamOptions(parsed: ParsedFormatRequest, api: Api, signal: Abort
 					? options.toolChoice
 					: { type: "tool", name: options.toolChoice.name };
 	}
-	if (options.reasoning !== undefined) opts.reasoning = options.reasoning;
-	if (options.disableReasoning !== undefined) opts.disableReasoning = options.disableReasoning;
-	if (options.hideThinkingSummary !== undefined) opts.hideThinkingSummary = options.hideThinkingSummary;
+	if (isGeminiModel(model)) {
+		opts.reasoning = options.reasoning ?? Effort.High;
+		opts.disableReasoning = false;
+	} else {
+		if (options.reasoning !== undefined) opts.reasoning = options.reasoning;
+		if (options.disableReasoning !== undefined) opts.disableReasoning = options.disableReasoning;
+	}
 	if (options.taskBudget !== undefined) opts.taskBudget = options.taskBudget;
 	if (options.serviceTier !== undefined) opts.serviceTier = options.serviceTier;
 	if (options.cacheRetention !== undefined) opts.cacheRetention = options.cacheRetention;
@@ -196,7 +212,7 @@ function buildStreamOptions(parsed: ParsedFormatRequest, api: Api, signal: Abort
 		options.responseFormat !== undefined
 	) {
 		logger.debug("auth-gateway dropped unsupported typed options", {
-			api,
+			api: model.api,
 			parallelToolCalls: options.parallelToolCalls,
 			previousResponseId: options.previousResponseId,
 			seed: options.seed,
@@ -436,7 +452,7 @@ async function handleFormatEndpoint(
 		);
 	}
 
-	const streamOpts = buildStreamOptions(parsed, model.api, controller.signal);
+	const streamOpts = buildStreamOptions(parsed, model, controller.signal);
 	streamOpts.apiKey = buildGatewayApiKeyResolver(
 		bootOpts.storage,
 		model,
@@ -517,7 +533,7 @@ async function handleFormatEndpoint(
 		status: 200,
 		headers: {
 			...gatewayResponseHeaders(model, { requestId }),
-			"Content-Type": "text/event-stream; charset=utf-8",
+			"Content-Type": route.module.streamContentType ?? "text/event-stream; charset=utf-8",
 			"Cache-Control": "no-cache",
 			Connection: "keep-alive",
 			// Disable proxy buffering (nginx and ingress controllers honor this).
@@ -605,6 +621,10 @@ async function handlePiNative(bootOpts: AuthGatewayBootOptions, req: Request, pe
 	// only inject server-controlled fields. The codex sampling strip mirrors
 	// `buildStreamOptions` — Codex rejects every one with a 400 (#3117).
 	const streamOpts: SimpleStreamOptions = { ...parsed.options, apiKey, signal: controller.signal };
+	if (isGeminiModel(model)) {
+		streamOpts.reasoning = streamOpts.reasoning ?? Effort.High;
+		streamOpts.disableReasoning = false;
+	}
 	streamOpts.apiKey = buildGatewayApiKeyResolver(
 		bootOpts.storage,
 		model,
@@ -731,6 +751,25 @@ async function handleCredentialsCheck(storage: AuthStorage, signal: AbortSignal)
 	return json(200, { generatedAt: Date.now(), credentials });
 }
 
+function handleOllamaTagsList(opts: AuthGatewayBootOptions): Response {
+	const list = opts.listModels ? Array.from(opts.listModels()) : [];
+	const models = list.map(model => ({
+		name: `${model.provider}/${model.id}`,
+		model: `${model.provider}/${model.id}`,
+		modified_at: new Date(0).toISOString(),
+		size: 0,
+		digest: "",
+		details: {
+			format: "api",
+			family: model.provider,
+			families: [model.provider],
+			parameter_size: "",
+			quantization_level: "",
+		},
+	}));
+	return json(200, { models });
+}
+
 function handleModelsList(opts: AuthGatewayBootOptions): Response {
 	const seen = new Set<string>();
 	const data: Array<{ id: string; object: "model"; owned_by: string; api: Api }> = [];
@@ -804,6 +843,11 @@ export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServe
 				// Model catalog.
 				if (req.method === "GET" && (pathname === "/v1/models" || pathname === "/models")) {
 					return withCors(handleModelsList(opts), req);
+				}
+
+				// Ollama-compatible model listing (drop-in `/api/tags`).
+				if (req.method === "GET" && pathname === "/api/tags") {
+					return withCors(handleOllamaTagsList(opts), req);
 				}
 
 				// Route-table miss: no format module to defer to, so we emit a

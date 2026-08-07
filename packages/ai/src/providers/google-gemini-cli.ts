@@ -1264,12 +1264,6 @@ export function buildRequest(
 	if (options.minP !== undefined) {
 		generationConfig.minP = options.minP;
 	}
-	if (options.presencePenalty !== undefined) {
-		generationConfig.presencePenalty = options.presencePenalty;
-	}
-	if (options.repetitionPenalty !== undefined) {
-		generationConfig.repetitionPenalty = options.repetitionPenalty;
-	}
 
 	// Thinking config
 	if (options.thinking?.enabled && model.reasoning) {

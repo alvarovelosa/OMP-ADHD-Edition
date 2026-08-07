@@ -41,6 +41,37 @@ async function readSessionContent(p: string): Promise<string> {
 	return new FileSessionStorage().readText(p);
 }
 
+export class SessionArchiveError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+	) {
+		super(message);
+	}
+}
+
+/** Archive a live session file by absolute path. Shared by the `/api/sessions/archive` route and the `/exit` slash command. */
+export async function archiveSessionAtPath(resolvedPath: string): Promise<{ path: string; archivedTo: string }> {
+	const agentDir = getAgentDir();
+	const sessionsRoot = path.resolve(getSessionsDir(agentDir));
+	if (!resolvedPath.startsWith(sessionsRoot + path.sep)) {
+		throw new SessionArchiveError("Path is outside the managed sessions directory", 400);
+	}
+	const sessions = await listAllSessions();
+	const session = sessions.find(s => s.path === resolvedPath);
+	if (!session) throw new SessionArchiveError("Session not found", 404);
+	const archiveRoot = getArchivedSessionsDir(agentDir);
+	const dest = archiveDestination(archiveRoot, sessionsRoot, session);
+	if (!dest) throw new SessionArchiveError("Session path is not archivable", 400);
+	try {
+		await moveSessionWithArtifacts({ session, ...dest });
+	} catch (err) {
+		if (isEnoent(err)) throw new SessionArchiveError("Session not found", 404);
+		throw new SessionArchiveError(err instanceof Error ? err.message : String(err), 409);
+	}
+	return { path: session.path, archivedTo: dest.destinationPath };
+}
+
 export async function handleSessionsApiRequest(req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const pathname = url.pathname;
@@ -173,37 +204,12 @@ export async function handleSessionsApiRequest(req: Request): Promise<Response> 
 		if (!candidatePath || typeof candidatePath !== "string") {
 			response = Response.json({ error: "Missing session path" }, { status: 400 });
 		} else {
-			const agentDir = getAgentDir();
-			const sessionsRoot = path.resolve(getSessionsDir(agentDir));
-			const resolvedPath = path.resolve(candidatePath);
-			if (!resolvedPath.startsWith(sessionsRoot + path.sep)) {
-				response = Response.json({ error: "Path is outside the managed sessions directory" }, { status: 400 });
-			} else {
-				const sessions = await listAllSessions();
-				const session = sessions.find(s => s.path === resolvedPath);
-				if (!session) {
-					response = Response.json({ error: "Session not found" }, { status: 404 });
-				} else {
-					const archiveRoot = getArchivedSessionsDir(agentDir);
-					const dest = archiveDestination(archiveRoot, sessionsRoot, session);
-					if (!dest) {
-						response = Response.json({ error: "Session path is not archivable" }, { status: 400 });
-					} else {
-						try {
-							await moveSessionWithArtifacts({ session, ...dest });
-							response = Response.json({ path: session.path, archivedTo: dest.destinationPath });
-						} catch (err) {
-							if (isEnoent(err)) {
-								response = Response.json({ error: "Session not found" }, { status: 404 });
-							} else {
-								response = Response.json(
-									{ error: err instanceof Error ? err.message : String(err) },
-									{ status: 409 },
-								);
-							}
-						}
-					}
-				}
+			try {
+				const result = await archiveSessionAtPath(path.resolve(candidatePath));
+				response = Response.json(result);
+			} catch (err) {
+				const status = err instanceof SessionArchiveError ? err.status : 500;
+				response = Response.json({ error: err instanceof Error ? err.message : String(err) }, { status });
 			}
 		}
 	} else if (req.method === "POST" && pathname === "/api/sessions/delete") {
