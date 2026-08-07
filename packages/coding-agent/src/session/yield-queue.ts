@@ -164,9 +164,10 @@ export class YieldQueue {
 	 * return null to skip). Background-job completions and late diagnostics reach
 	 * the model between requests without the agent having to stop.
 	 */
-	drainLazy(): Array<() => AgentMessage | null> {
+	drainLazy(targetKind?: string): Array<() => AgentMessage | null> {
 		const thunks: Array<() => AgentMessage | null> = [];
 		for (const [kind, dispatcher] of this.#dispatchers) {
+			if (targetKind !== undefined && kind !== targetKind) continue;
 			const entries = this.#drain(kind);
 			if (entries.length === 0) continue;
 			thunks.push(() => {

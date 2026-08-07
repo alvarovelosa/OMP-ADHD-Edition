@@ -286,4 +286,24 @@ describe("YieldQueue", () => {
 
 		expect(thunks[0]!()).toBeNull();
 	});
+	test("drainLazy with targetKind drains only specified kind and preserves others", () => {
+		const harness = createHarness(true);
+		harness.queue.register<Entry>("advisor", {
+			build: entries => userMessage("advisor:" + entries.map(e => e.id).join(",")),
+		});
+		harness.queue.register<Entry>("other", {
+			build: entries => userMessage("other:" + entries.map(e => e.id).join(",")),
+		});
+
+		harness.queue.enqueue("advisor", { id: "a1" });
+		harness.queue.enqueue("other", { id: "o1" });
+
+		const thunks = harness.queue.drainLazy("advisor");
+		expect(thunks).toHaveLength(1);
+		expect(harness.queue.has("advisor")).toBe(false);
+		expect(harness.queue.has("other")).toBe(true);
+
+		const msg = thunks[0]!();
+		expect(msg && messageText(msg)).toBe("advisor:a1");
+	});
 });

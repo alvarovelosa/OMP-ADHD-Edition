@@ -1073,7 +1073,7 @@ export class SessionAdvisors {
 	 * visible preserved advisor cards.
 	 */
 	flushPendingAdvisorAsides(): void {
-		const thunks = this.#host.yieldQueue.drainLazy();
+		const thunks = this.#host.yieldQueue.drainLazy("advisor");
 		for (const thunk of thunks) {
 			const message = thunk();
 			if (message?.role !== "custom" || message.customType !== "advisor") continue;
