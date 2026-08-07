@@ -10,6 +10,82 @@
 
 - Fixed the advisor treating a provider empty response (e.g. "Cloud Code Assist API returned an empty response") as a retriable failure: it now completes as a silent review instead of burning the retry budget and warning "Advisor unavailable" after consecutive empty cycles ([#5216](https://github.com/can1357/oh-my-pi/issues/5216)).
 - Fixed `mnemopi.dbPath` being treated as configured when saved as an empty string (e.g. a settings editor clearing the field instead of unsetting it): Mnemopi now falls back to the default database location instead of resolving to a blank path, whose directory (`.`) crashed `mkdirSync` and silently disabled the memory backend on startup.
+- Added support for the [Agent Plugins 1.0.0 standard](https://agent-plugins.org): plugin packages with a root `plugin.json` targeting the canonical schema are discovered from marketplace installs, `--plugin-dir`, and configured extension roots, with `skills/` and `mcp.json` loaded per the specification (closed-schema validation per skills-ref, `${PLUGIN_ROOT}`/`${PLUGIN_DATA}` expansion, reserved subprocess environment, instance-keyed persistent data directories, and per-component failure isolation). Package-boundary containment is enforced before every read — including `skill://` resource access from the read tool and bash, where plugin skill files must realpath-resolve inside the plugin root.
+- Remote MCP transports now enforce header precedence and origin policy: client-generated HTTP/MCP/authorization headers win over configured headers case-insensitively, and Agent Plugins servers never forward configured headers across a redirect to a different origin (method-changing redirects of JSON-RPC POSTs are refused). Agent Plugins stdio `env` values and remote `headers` are likewise exempt from config-value resolution (no ambient env-name lookup, no `!command` execution, empty values preserved).
+- Added `omp share <session>`: share a saved session by id prefix or `.jsonl` path without launching the agent — same encrypted upload, store selection, and `share.redactSecrets` handling as the `/share` slash command.
+- Added `AGENT=1` to coding-agent child-process environments so downstream tools can detect agent-driven execution ([#7847](https://github.com/can1357/oh-my-pi/issues/7847)).
+
+### Changed
+
+- Consolidated Exa web-search enablement on `exa.enabled`; legacy `exa.enableSearch` values migrate automatically, and the obsolete Researcher and Websets settings have been removed.
+- Removed stale `computer.backend` values during config migration.
+- Clarified the JavaScript/TypeScript debug adapter install path: `js-debug-adapter` is the omp adapter id, not an npm package, so `npm i -g js-debug-adapter` 404s. The docs and the "adapter not available" message now point to the supported installs — Mason, the standalone release tarball extracted under `~/.local/opt` (auto-discovered), or `JS_DEBUG_DAP_SERVER`. The docs also note the adapter runs under `node` if available, else the omp Bun host ([#7757](https://github.com/can1357/oh-my-pi/issues/7757)).
+
+### Fixed
+
+- Fixed proxy discovery preferring the bundled catalog name over the proxy-reported name, so `omp models refresh` now updates stale display names (e.g. a proxy serving `longcat-2.0` as `"LongCat"` no longer shows the raw id).
+- Fixed the compiled binary build on Windows: `Bun.Glob.scan` yields backslash-separated paths, which the legacy Pi virtual module used verbatim for export keys and generated identifiers, producing invalid JavaScript.
+- Fixed Ctrl+O (`app.tools.expand`) not expanding truncated tool output while a tool-approval prompt or other selection dialog held keyboard focus, by promoting the shortcut to a global input listener that fires regardless of focus (it still defers to fullscreen overlays and the tree selector's own Ctrl+O filter cycle) ([#7837](https://github.com/can1357/oh-my-pi/issues/7837)).
+- Fixed `omp commit` printing a wall of bundled source when a `pre-commit`/`commit-msg` hook refuses a commit: hook failures are now reported with the hook's own message, split plans report how far they got, and the command exits non-zero cleanly ([#7834](https://github.com/can1357/oh-my-pi/issues/7834)).
+- Fixed `omp commit --push` exiting 0 without pushing when the working tree is already clean; it now pushes the existing commits (or fails non-zero if the push is refused) ([#7834](https://github.com/can1357/oh-my-pi/issues/7834)).
+- Fixed strict output schemas being rejected when native JSON Schema definition maps contain `ref` or applicator branches use `properties` without `type`.
+- Fixed the leading `cd <path> && ...` extraction absorbing shell syntax into the structured `cwd`, so `cd /tmp 2>/dev/null && echo ok` died with "Working directory does not exist: /tmp 2>/dev/null" before the shell ran. Extraction now captures a single path token via a quote-aware scanner and defers to the shell when anything else (redirects, extra arguments, shell expansion) precedes the top-level `&&` ([#7883](https://github.com/can1357/oh-my-pi/issues/7883)).
+- Applied reason-specific backoff to transient rate-limit retries and collapsed exhausted retry sagas into one terminal error naming the spent budget ([#7767](https://github.com/can1357/oh-my-pi/issues/7767)).
+- Fixed session-tree rows rendering as bare bullets: bookkeeping entries (title changes, credential pins, mode and service-tier changes, TTSR injections, reset boundaries, session init) had no display text at all, so they drew as empty rows. They are now hidden in the default view like other settings entries, and labelled with what they recorded in `all` mode.
+- Fixed extension and custom tools inheriting a same-named built-in TUI renderer, which could replace successful result content with incorrect built-in status text ([#7770](https://github.com/can1357/oh-my-pi/issues/7770)).
+- Fixed the bundled `ts-no-tiny-functions` TTSR rule never firing on one-line arrow functions in real files: the second alternative's `$` anchor only matched at the absolute end of input, so the trailing newline present in every real file suppressed the match. The condition now opens with the `(?m)` inline flag so the arrow body matches to the line end ([#6890](https://github.com/can1357/oh-my-pi/issues/6890)).
+- Fixed `omp commit` exiting 0 when the commit agent failed and the mechanical fallback wrote the commit: the command now exits non-zero when the fallback was used, so callers can distinguish a degraded numstat commit from a legitimate single-commit decision ([#7835](https://github.com/can1357/oh-my-pi/issues/7835)).
+- Fixed prewalk lifecycle handling so same-model/same-effort arms reject without plan injection or false success output, consumed plan nudges do not return after context rebuilds, explicit re-arms require a fresh TODO, and settings-enabled prewalk does not implicitly re-arm restored sessions.
+- Fixed the todo completion reminder still firing while the agent was waiting on a user question asked in a non-English language. The `isAwaitingUserAnswer` guard only recognized English question words and pronouns, so a `？`/`?`-terminated Chinese, Japanese, Korean, or Spanish prompt (e.g. `我应该继续吗？`) went undetected and the `<system-reminder>` interrupted the pause — which the model then misread as the user's answer and acted on. A trailing question mark plus any non-ASCII character in the line now counts as a pending question ([#7803](https://github.com/can1357/oh-my-pi/issues/7803)).
+- Normalized resolved file paths in `read` summary recovery selectors, PDF image handles, and notebook errors so suffix-matched input does not teach agents malformed follow-up paths ([#7788](https://github.com/can1357/oh-my-pi/issues/7788)).
+- Fixed a per-turn `before_agent_start` system prompt override being silently dropped when a base-prompt rebuild fired between the hook and the provider request. The override lived only on the agent state, so `refreshBaseSystemPrompt`/`applyActiveToolsByName` re-pushing the rebuilt base (context-overflow compaction/promotion, memory promotion, MCP/RPC tool refresh, or the fire-and-forget hindsight MM-TTL refresh) clobbered it. The tools controller now tracks the active override and re-applies it on every base rebuild during the turn, clearing it when the turn ends ([#7755](https://github.com/can1357/oh-my-pi/issues/7755)).
+- Fixed ACP `session/load` and `session/resume` failing with `ACP session not found` for sessions created under the legacy/hashed project-directory scheme (17.2.5+, reverted in #7656): the lookup only scanned the directory re-derived from `cwd`, so sessions stored under a differently-named directory were unreachable. It now falls back to a global by-id scan (the same one the fork path already uses) when the cwd-scoped lookup misses ([#7779](https://github.com/can1357/oh-my-pi/issues/7779)).
+- Fixed `vault://<name>?op=...` commands targeting the focused/most-recently-active vault instead of the named one. The `vault=<name>` argument was appended after the Obsidian CLI subcommand (`obsidian bases vault=Work`), but the CLI only honors it as a top-level option before the subcommand (`obsidian vault=Work bases`); it is now prepended so the named vault is queried (and opened) regardless of window focus ([#7771](https://github.com/can1357/oh-my-pi/issues/7771)).
+- The status-line `session_name` segment now honors the `statusLine.sessionAccent` setting: when disabled, the rendered session name falls back to the theme `accent` color instead of emitting the hash-derived session accent, matching the gap-fill divider behavior ([#7867](https://github.com/can1357/oh-my-pi/pull/7867)).
+
+## [17.2.10] - 2026-08-06
+
+### Breaking Changes
+
+- Replaced the re-exported `zod` API with an `omptype`-backed compatibility facade (`@oh-my-pi/omptype/zod`). Plugins retain the standard Zod-style builder interface, but real Zod-specific APIs are no longer available.
+
+### Added
+
+- Added a `--trusted-extension <absolute-path>` CLI flag to load an exact extension-module allowlist, bypassing ambient extension discovery.
+- Added resumable session details to fatal crash outputs, including a suggested `omp --resume <session-id>` command to quickly resume persisted live agent sessions.
+
+### Changed
+
+- Reworked the Ctrl+S Agent Hub into a responsive fullscreen roster and selected-agent inspector, featuring aggregate status/usage metrics, detailed per-agent views (task, model, activity, usage, lineage), roster and spawn-tree views, stable ordering, asynchronous persisted-session discovery, restored historical metadata, and improved keyboard and mouse navigation.
+- Replaced `arktype` with `@oh-my-pi/omptype` for all tool parameter and configuration schemas, resulting in significantly faster startup times. Configuration schema errors are now reported via `OmpErrors` entries using the standard `path`/`problem` format.
+
+### Fixed
+
+- Fixed panel commands (such as `/usage` and `/advisor status`) appearing unresponsive during active turns by flushing the deferred-panel queue at every settle, terminal or not. The deferral itself stays silent: mounting a status line into the transcript mid-turn re-renders rows below the live block and duplicates them in native scrollback (issues #4806/#6767).
+- Fixed the bundled `ts-no-tiny-functions` rule failing to match one-line arrow functions in files with trailing newlines.
+- Fixed advisor refusals skipping the model fallback chain, and bounded refusal recovery to a single attempt per model to prevent infinite fallback loops.
+- Fixed repeated `/mcp reauth` commands getting stuck by ensuring new reauthorization requests cancel and clean up any pending MCP OAuth login flows.
+- Fixed WSL host-home resolution to build `/mnt/<drive>/...` fallback paths using POSIX semantics regardless of the host platform.
+- Fixed Python evaluation shell helpers (`!cmd`, `%%bash`, `%pip`) letting child processes inherit the runner's stdin, which previously caused deadlocks on Windows. Additionally, `%%bash` now correctly resolves Git Bash on Windows.
+- Fixed subagents spawned via model-role aliases incorrectly falling back to the `default` role's retry chain instead of their own configured role chain.
+- Fixed Linux/X11 clipboard reads failing when `xclip` is missing but `xsel` is available.
+- Hardened Linux Chromium executable detection to filter out non-executable files, invalid wrappers, and candidates that hang during version probes.
+- Fixed Bash command preview crashes caused by malformed tool arguments containing non-string environment values.
+- Fixed UI rendering in the model browser and model hub where `nerd`-preset role chips would overlap and obscure the first character of labels.
+- Fixed Codex web search sending incompatible request shapes to certain models, which caused the hosted `web_search` tool to ignore them.
+- Fixed resumed or rebuilt sessions incorrectly applying stale rewind reports from previous checkpoint cycles to new checkpoints.
+- Fixed the `read` tool incorrectly parsing semicolon-delimited internal URLs (such as batched `skill://` resources) as a single invalid resource.
+- Fixed `pi.getAllTools()` returning bare strings instead of `ToolInfo[]` objects, restoring compatibility with extensions built against the upstream contract.
+- Fixed legacy extensions failing to load in compiled binaries when resolving bundled dependencies via dynamic `createRequire` factories.
+- Fixed Wayland window activation and native input handling by correctly reporting them as unavailable rather than attempting unsupported foreground-delivery paths.
+- Fixed live execution progress being hidden in the conversation view after approving a plan in the fullscreen Plan Review.
+- Fixed `omp -r` failing to discover sessions created under the temporary hashed project-directory scheme by adding a one-way migration back to legacy path-based names.
+- Prevented the `read` tool from advertising or resolving `memory://` URIs when the memory backend is disabled.
+- Fixed the Shift-Tab thinking mode UI rendering the `off` state as a blank label, which made it appear that reasoning could not be disabled.
+- Fixed parsing of POSIX `$EDITOR` commands that contain quoted arguments or executable paths with spaces.
+- Fixed persisted Agent Hub rows losing the explicit caller model role when a subagent used a model override, preserving role provenance across restarts.
+- Fixed unobserved promise rejections in browser helpers (such as `tab.waitForResponse()`) causing tab workers to hang or crash.
+
 ## [17.2.9] - 2026-08-05
 
 ### Breaking Changes
@@ -22,7 +98,6 @@
 
 ### Changed
 
-- Reworked the Ctrl+S Agent Hub into a responsive fullscreen roster and selected-agent inspector with aggregate status/usage, per-agent task/model/activity/usage/lineage details, roster and spawn-tree views, stable ordering, bounded large-roster rendering, asynchronous persisted-session discovery, restored task/timestamp metadata for historical agents, and consistent keyboard and mouse navigation.
 - Restored the legacy project-scoped session directory naming scheme and removed its automatic migration ([#7646](https://github.com/can1357/oh-my-pi/issues/7646)).
 - Routed Bun install-cache pruning in `update-cli` through the shared `compareVersions` utility (`@oh-my-pi/pi-utils`), removing a duplicate local comparator that rounded large numeric version identifiers via `Number`.
 
@@ -50,7 +125,6 @@
 - Fixed Herdr rejecting the macOS development launcher because its foreground process was reported as `bun` instead of `omp`.
 - Completed usage-aware model fallback across startup, queued turns, same-turn tool continuations, ACP/TUI confirmation cancellation, eligible account reselection, cooldown restoration, and isolated subagent settings so low-usage handoffs remain lossless and cannot consume cancelled queued work.
 - Fixed Agent Hub opening and selection becoming O(all rows) on large rosters: row rendering is now lazy around the selected viewport, and observer lookup is O(1) by id instead of copy-sorting every session per row.
-- Fixed persisted Agent Hub rows dropping an explicit caller model role when a subagent used a model override, preserving role provenance after restart.
 - Fixed the bash interceptor blocking `grep`/`cat`/`find` used as a downstream pipeline stage (e.g. `printf 'x\n' | grep x`); a stage consuming piped stdin cannot be replaced by a path-based dedicated tool, so it is no longer matched, while standalone and first-stage searches stay intercepted ([#7496](https://github.com/can1357/oh-my-pi/issues/7496)).
 - Fixed floating rejections from cmux browser guest JavaScript terminating the main process and every active session; attributable rejections now fail the browser run as tool errors while unrelated process rejections retain the fatal path ([#7365](https://github.com/can1357/oh-my-pi/issues/7365)).
 - Fixed the Windows bash tool silently taking down the whole omp process when a command blocked until its timeout: cancelling a timed-out run walked the spawned child's descendant tree from raw `th32ParentProcessID` links, and a recycled pid matching the harness's stale recorded parent pid could enumerate omp as a false descendant and `TerminateProcess` it, killing the session with no `session_exit` record. Run-cancellation sweeps now refuse to signal the harness or any process collected beneath it, while still reaping the timed-out target when it owns a recycled ancestor pid ([#7452](https://github.com/can1357/oh-my-pi/issues/7452)).
@@ -73,7 +147,6 @@
 ### Changed
 
 - Replaced arktype with @oh-my-pi/omptype for tool parameter and config schemas, significantly improving startup performance with ~100x faster schema construction. Config schema errors are now reported via OmpErrors using the same path/problem structure.
-- Replaced arktype with `@oh-my-pi/omptype` across all tool parameter and config schemas: ~100x faster schema construction removes the arktype startup tax (the `scope({}, { jitless: true })` workarounds are gone). Config schema errors now report via `OmpErrors` entries with the same `path`/`problem` shape.
 
 ### Fixed
 
@@ -153,13 +226,6 @@
 - Fixed heavily branched conversation trees shifting linear continuations into disconnected columns.
 - Fixed plugin installation validation failures for legacy compatibility shims.
 - Removed hard-coded references to disabled or absent agents in system and tool prompts.
-### Added
-
-- Added resumable session details to fatal crash output, including an `omp --resume <session-id>` command for every persisted live agent session.
-
-### Fixed
-
-- Fixed unobserved promise continuations from browser helpers such as `tab.waitForResponse()` wedging or killing the tab worker when they reject; browser facade promises now retain native promise behavior while observing every `then`, `catch`, and `finally` continuation, and late user continuation errors are logged instead of dropped after the run ends.
 
 ## [17.2.4] - 2026-08-01
 

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Herdr panes losing native scrollback when TUI transcript replacement or resize redraws emitted destructive terminal-history clears.
+- Fixed explicit display resets inside tmux retaining the stale attach-time light/dark palette and leaking terminal capability bytes into the editor. OMP now lets the passthrough OSC 11 probe update tmux's background cache without sending a passthrough DA1 sentinel, then reads that refreshed cache directly.
+
+## [17.2.10] - 2026-08-06
+
+### Fixed
+
+- Fixed a startup crash (EIO error) in multiplexer or SSH sessions when a revoked pty leaves stdin.isTTY active.
+- Fixed prompt autocomplete to support Windows drive-absolute paths (e.g., C:/ or C:\).
+- Fixed desktop notifications in systemd, tmux, or SSH-attached Linux sessions when DBUS_SESSION_BUS_ADDRESS is unset.
+- Fixed an issue where Shift+letter and shifted symbol inputs (such as capital letters, ?, and !) were silently dropped on Windows and WSL terminals using ConPTY (e.g., WezTerm).
+
 ## [17.2.9] - 2026-08-05
 
 ### Fixed

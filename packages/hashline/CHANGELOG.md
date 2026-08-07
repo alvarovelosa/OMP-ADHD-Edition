@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Pasting an empty named register (`PUT … @name` with no matching capture) no longer errors — it pastes nothing (a span target is still removed) and surfaces a warning naming the available registers
+
+## [17.2.10] - 2026-08-06
+
+### Changed
+
+- Updated internal caching dependency to use `@oh-my-pi/pi-utils/lru`.
+
 ## [17.2.2] - 2026-07-31
 
 ### Breaking Changes

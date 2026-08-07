@@ -26,7 +26,7 @@ import {
 	readImageMetadata,
 	untilAborted,
 } from "@oh-my-pi/pi-utils";
-import { LRUCache } from "lru-cache/raw";
+import { LRUCache } from "@oh-my-pi/pi-utils/lru";
 import {
 	canonicalSnapshotKey,
 	getFileSnapshotStore,
@@ -721,6 +721,10 @@ const readSchema = type({
 	),
 });
 
+const readSchemaWithoutMemory = type({
+	path: type("string").describe("Local path, internal URI (e.g. skill://), or URL. Inline selectors are supported."),
+});
+
 export type ReadToolInput = typeof readSchema.infer;
 
 export interface ReadToolDetails {
@@ -866,7 +870,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 	readonly label = "Read";
 	readonly loadMode = "essential";
 	description: string;
-	readonly parameters = readSchema;
+	get parameters(): typeof readSchema {
+		return this.session.settings.get("memory.backend") === "off" ? readSchemaWithoutMemory : readSchema;
+	}
 	readonly strict = true;
 
 	readonly #autoResizeImages: boolean;
@@ -962,8 +968,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 	async #tryReadDelimitedPaths(
 		readPath: string,
 		signal?: AbortSignal,
+		routedUrlPredicate?: (entry: string) => boolean,
 	): Promise<AgentToolResult<ReadToolDetails> | null> {
-		const parts = await splitDelimitedPathEntry(readPath, this.session.cwd);
+		const parts = await splitDelimitedPathEntry(readPath, this.session.cwd, { routedUrlPredicate });
 		if (!parts) return null;
 
 		const notice = `Note: interpreted as ${parts.length} paths: ${parts.join(", ")}`;
@@ -2306,9 +2313,13 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		}
 
 		// Handle native OMP URLs and custom-scheme resources advertised by MCP servers.
-		// Use the internal-URL-aware splitter so malformed selectors are peeled
-		// off the URL and surfaced via parseSel rather than confusing handlers.
 		const internalRouter = InternalUrlRouter.instance();
+		const delimitedInternalResult = internalRouter.canResolve(readPath)
+			? await this.#tryReadDelimitedPaths(readPath, signal, entry => internalRouter.canResolve(entry))
+			: null;
+		if (delimitedInternalResult) return delimitedInternalResult;
+
+		// Peel malformed selectors through the internal-URL-aware parser before routing.
 		let promotedSelector: string | undefined;
 		if (internalRouter.canResolve(readPath)) {
 			const internalTarget = splitInternalUrlSel(readPath);
@@ -2486,6 +2497,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		const imageMetadata = await readImageMetadata(absolutePath);
 		const mimeType = imageMetadata?.mimeType;
 		const ext = path.extname(absolutePath).toLowerCase();
+		const resolvedDisplayPath = formatPathRelativeToCwd(absolutePath, this.session.cwd);
 		const shouldConvertWithMarkit = CONVERTIBLE_EXTENSIONS.has(ext);
 
 		// Profiler reports (macOS `sample` call trees, V8 `.cpuprofile` JSON):
@@ -2530,7 +2542,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				fileSize,
 			}));
 		} else if (isNotebookPath(absolutePath) && !isRawSelector(parsed)) {
-			const notebookText = await readEditableNotebookText(absolutePath, localReadPath);
+			const notebookText = await readEditableNotebookText(absolutePath, resolvedDisplayPath);
 			if (isMultiRange(parsed) && parsed.kind === "lines") {
 				return this.#buildInMemoryMultiRangeResult(notebookText, parsed.ranges, {
 					details: { resolvedPath: absolutePath },
@@ -2549,7 +2561,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			const result = await convertFileWithMarkit(absolutePath, signal);
 			if (result.ok) {
 				const renderedContent =
-					ext === ".pdf" ? rewritePdfImagePlaceholders(result.content, localReadPath) : result.content;
+					ext === ".pdf" ? rewritePdfImagePlaceholders(result.content, resolvedDisplayPath) : result.content;
 				// Route the converted markdown through the in-memory text builder
 				// so line-range selectors (`file.pdf:50-100`, `:5-16,40-80`) and
 				// raw mode apply against the converted output. Without this,
@@ -2592,7 +2604,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				return toolResult<ReadToolDetails>({ resolvedPath: absolutePath, suffixResolution })
 					.text(
 						prependSuffixResolutionNotice(
-							`[Cannot read binary file '${formatPathRelativeToCwd(absolutePath, this.session.cwd)}' (${formatBytes(fileSize)}); not valid UTF-8 text. Use ':raw' to read bytes verbatim.]`,
+							`[Cannot read binary file '${resolvedDisplayPath}' (${formatBytes(fileSize)}); not valid UTF-8 text. Use ':raw' to read bytes verbatim.]`,
 							suffixResolution,
 						),
 					)
@@ -2609,7 +2621,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				if (summary?.parsed && summary.elided) {
 					const renderedSummary = this.#renderSummary(summary);
 					const footer = formatSummaryElisionFooter(
-						localReadPath,
+						resolvedDisplayPath,
 						renderedSummary.elidedRanges,
 						renderedSummary.elidedLines,
 					);

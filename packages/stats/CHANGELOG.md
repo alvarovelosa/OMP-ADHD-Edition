@@ -13,6 +13,12 @@
 
 - Fixed "Show archived" toggle in the sessions dashboard by expanding query parameter handling so archived sessions are loaded when enabled.
 - Fixed the "Resume" button appearing unresponsive: the click now disables just the Resume button (label swaps to "Launching…") and shows a transient "Terminal launched" success banner for ~4 s after the spawn resolves, alongside the existing error block on failure.
+## [17.2.10] - 2026-08-06
+
+### Changed
+
+- Optimized package dependencies by replacing `date-fns` with `@oh-my-pi/pi-utils/dates` and removing unused test dependencies.
+
 ## [17.2.9] - 2026-08-05
 
 ### Fixed
