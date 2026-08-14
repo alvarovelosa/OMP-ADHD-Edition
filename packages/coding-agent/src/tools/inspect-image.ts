@@ -173,20 +173,20 @@ export class InspectImageTool implements AgentTool<typeof inspectImageSchema, In
 		let selectedPattern: string | undefined;
 		for (const pattern of ["@vision", "@default", activeModelPattern]) {
 			const resolved = resolvePattern(pattern);
-			if (resolved) {
+			// Only accept a candidate that can actually see images: a fuzzy/alias
+			// match may resolve to a text-only model (e.g. an Ollama-probed entry),
+			// in which case fall through to the next preference tier.
+			if (resolved?.input.includes("image")) {
 				model = resolved;
 				selectedPattern = pattern;
 				break;
 			}
 		}
-		model ??= availableModels[0];
+		// Fall through to the first available vision-capable model before giving up.
+		model ??= availableModels.find(candidate => candidate.input.includes("image"));
 		if (!model) {
-			throw new ToolError("Unable to resolve a model for inspect_image.");
-		}
-
-		if (!model.input.includes("image")) {
 			throw new ToolError(
-				`Resolved model ${model.provider}/${model.id} does not support image input. Configure a vision-capable model for modelRoles.vision.`,
+				"No vision-capable model is available for inspect_image. Configure modelRoles.vision with an image-capable model.",
 			);
 		}
 

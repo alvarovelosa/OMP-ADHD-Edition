@@ -19,7 +19,7 @@ import {
 import { normalizeModelContextImages } from "../utils/image-loading";
 import { describeAttachedImagesForTextModel } from "../utils/image-vision-fallback";
 import { type CustomMessage, convertToLlm } from "./messages";
-import { IMAGE_ATTACHMENT_DESCRIPTION_TYPE } from "./queued-messages";
+import { IMAGE_ATTACHMENT_DESCRIPTION_FAILED_TYPE, IMAGE_ATTACHMENT_DESCRIPTION_TYPE } from "./queued-messages";
 import type { BuildSessionContextOptions, SessionContext } from "./session-context";
 import type { SessionManager } from "./session-manager";
 
@@ -211,7 +211,7 @@ export class SessionProviderBoundary {
 		return normalizeModelContextImages(images, { model: this.#host.model() });
 	}
 
-	/** Builds a hidden vision-model description for attachments sent to a text-only model. */
+	/** Builds a vision-model description for attachments sent to a text-only model. */
 	async buildImageDescriptionNotice(
 		normalizedImages: ImageContent[],
 		signal?: AbortSignal,
@@ -243,14 +243,30 @@ export class SessionProviderBoundary {
 			logger.warn("image attachment vision fallback failed; image left undescribed", {
 				error: error instanceof Error ? error.message : String(error),
 			});
-			return undefined;
+			// Surface the failure in the transcript instead of dropping the image silently.
+			return {
+				role: "custom",
+				customType: IMAGE_ATTACHMENT_DESCRIPTION_FAILED_TYPE,
+				content: [
+					{
+						type: "text",
+						text:
+							"[Image description failed: " +
+							(error instanceof Error ? error.message : String(error)) +
+							". The image was saved but could not be analyzed automatically.]",
+					},
+				],
+				display: true,
+				attribution: "user",
+				timestamp: Date.now(),
+			};
 		}
 		if (blocks.length === 0) return undefined;
 		return {
 			role: "custom",
 			customType: IMAGE_ATTACHMENT_DESCRIPTION_TYPE,
 			content: blocks,
-			display: false,
+			display: true,
 			attribution: "user",
 			timestamp: Date.now(),
 		};

@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Fixed `inspect_image` resolving to a text-only model: a fuzzy/aliased pattern match (`@vision`, `@default`, or the active model) could land on a model without image input and abort with "does not support image input" instead of trying the next preference tier. It now only accepts vision-capable candidates, falls through to the first available image-capable model, and errors with a clear message only when none exists.
+- Fixed image attachments sent to a text-only model appearing to be silently dropped: the automatic vision-model description is now rendered in the transcript instead of being injected into context as a hidden `display: false` message, and a failed description (previously only written to the log) now surfaces a visible notice in the transcript.
 - Fixed non-interrupting advisor asides (`nit` notes enqueued with `skipIdleFlush`) being silently lost on session exit, reset, compaction, or turn end when no primary turn drained them: asides now flush to preserved visible advisor cards whenever the primary turn completes or the session quiesces.
 - Fixed the advisor treating a provider empty response (e.g. "Cloud Code Assist API returned an empty response") as a retriable failure: it now completes as a silent review instead of burning the retry budget and warning "Advisor unavailable" after consecutive empty cycles ([#5216](https://github.com/can1357/oh-my-pi/issues/5216)).
 - Fixed `mnemopi.dbPath` being treated as configured when saved as an empty string (e.g. a settings editor clearing the field instead of unsetting it): Mnemopi now falls back to the default database location instead of resolving to a blank path, whose directory (`.`) crashed `mkdirSync` and silently disabled the memory backend on startup.

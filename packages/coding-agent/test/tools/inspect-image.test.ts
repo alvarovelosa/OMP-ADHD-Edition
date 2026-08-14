@@ -442,7 +442,7 @@ describe("InspectImageTool", () => {
 		expect(selectedModel?.id).toBe("gpt-4o");
 	});
 
-	it("fails with actionable error when resolved model does not support image input", async () => {
+	it("fails with actionable error when no vision-capable model is available", async () => {
 		const imagePath = path.join(testDir, "screen.png");
 		fs.writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
 
@@ -450,9 +450,36 @@ describe("InspectImageTool", () => {
 		const tool = new InspectImageTool(createSession(testDir, textOnlyModel), stub.fn);
 
 		await expect(tool.execute("call-2", { path: imagePath, question: "What is visible?" })).rejects.toThrow(
-			/does not support image input/i,
+			/No vision-capable model is available/i,
 		);
 		expect(stub.calls).toHaveLength(0);
+	});
+
+	it("falls through to a vision-capable model when the @vision match is text-only", async () => {
+		const imagePath = path.join(testDir, "screen.png");
+		fs.writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
+
+		// The @vision pattern resolves to a text-only model (e.g. an Ollama-probed
+		// entry), but a later tier must win instead of aborting the tool.
+		const settings = Settings.isolated();
+		settings.setModelRole("vision", `${textOnlyModel.provider}/${textOnlyModel.id}`);
+		settings.setModelRole("default", `${visionModel.provider}/${visionModel.id}`);
+
+		const stub = createCompleteSimpleSuccessStub("Vision model fallback used");
+		const tool = new InspectImageTool(
+			createSession(testDir, textOnlyModel, "test-key", settings, {
+				configureVisionRole: false,
+				availableModels: [textOnlyModel, visionModel],
+				activeModel: textOnlyModel,
+			}),
+			stub.fn,
+		);
+
+		const result = await tool.execute("call-2b", { path: imagePath, question: "What is visible?" });
+		expect(result.details?.model).toBe("openai/gpt-4o");
+		expect(stub.calls).toHaveLength(1);
+		const selectedModel = stub.calls[0]?.[0] as { id?: string } | undefined;
+		expect(selectedModel?.id).toBe("gpt-4o");
 	});
 
 	it("fails with actionable error when API key is missing", async () => {

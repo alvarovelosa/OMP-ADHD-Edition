@@ -24,8 +24,18 @@ function queuedImageContent(message: AgentMessage): ImageContent[] | undefined {
 	return images.length > 0 ? images : undefined;
 }
 
+/** Whether a message is a vision-description companion (success or failure notice). */
+function isVisionDescriptionMessage(message: AgentMessage): boolean {
+	return (
+		message.role === "custom" &&
+		(message.customType === IMAGE_ATTACHMENT_DESCRIPTION_TYPE ||
+			message.customType === IMAGE_ATTACHMENT_DESCRIPTION_FAILED_TYPE)
+	);
+}
+
 /** Whether a queued message should render in the queue UI. */
 export function isDisplayableQueuedMessage(message: AgentMessage): boolean {
+	if (isVisionDescriptionMessage(message)) return false;
 	return !(message.role === "custom" && message.display === false);
 }
 
@@ -58,6 +68,7 @@ export function isTerminalTextAssistantAnswer(message: AgentMessage | undefined)
 
 /** Whether queued content was authored by the user and can be restored to the editor. */
 export function isUserQueuedMessage(message: AgentMessage): boolean {
+	if (message.role === "custom" && isVisionDescriptionMessage(message)) return false;
 	if (message.role === "user") return true;
 	return message.role === "custom" && message.attribution === "user" && message.display !== false;
 }
@@ -69,17 +80,22 @@ export const MAGIC_KEYWORD_NOTICE_TYPES: Record<string, true> = {
 	"workflow-notice": true,
 };
 
-/** Hidden companion carrying vision descriptions for a text-only model. */
+/** Companion carrying vision descriptions for a text-only model (rendered in transcript, hidden in the queue UI). */
 export const IMAGE_ATTACHMENT_DESCRIPTION_TYPE = "image-attachment-description";
+
+/** Visible failure notice when the vision-description fallback itself fails. */
+export const IMAGE_ATTACHMENT_DESCRIPTION_FAILED_TYPE = "image-attachment-description-failed";
 
 /** Whether a hidden queued message is a companion of an adjacent user prompt. */
 export function isHiddenUserCompanion(message: AgentMessage): boolean {
+	if (message.role === "custom" && isVisionDescriptionMessage(message)) {
+		return message.attribution === "user";
+	}
 	return (
 		message.role === "custom" &&
 		message.attribution === "user" &&
 		message.display === false &&
-		(MAGIC_KEYWORD_NOTICE_TYPES[message.customType] === true ||
-			message.customType === IMAGE_ATTACHMENT_DESCRIPTION_TYPE)
+		MAGIC_KEYWORD_NOTICE_TYPES[message.customType] === true
 	);
 }
 
