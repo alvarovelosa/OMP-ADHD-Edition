@@ -126,6 +126,7 @@ function publicFlashModel(): Model<"google-gemini-cli"> {
 async function captureRequest(
 	model: Model<"google-gemini-cli">,
 	reasoning: Effort | undefined,
+	options: { forceReasoningOff?: boolean } = {},
 ): Promise<{ body: CapturedRequestBody; attributedModel: string }> {
 	let requestBody: string | undefined;
 	const fetchMock: FetchImpl = (_input, init) => {
@@ -135,6 +136,7 @@ async function captureRequest(
 	const stream = streamSimple(model, context, {
 		apiKey: JSON.stringify({ token: "token", projectId: "proj-123" }),
 		reasoning,
+		forceReasoningOff: options.forceReasoningOff,
 		fetch: fetchMock,
 	});
 	const result = await stream.result();
@@ -164,6 +166,15 @@ describe("google-gemini-cli effort-tier variant routing", () => {
 
 	it("suppresses thinking with a zero budget on the wire when off and suppressWhenOff is set", async () => {
 		const off = await captureRequest(collapsedFlashModel(), undefined);
+		expect(off.body.model).toBe("gemini-3.5-flash-extra-low");
+		expect(off.body.request?.generationConfig?.thinkingConfig).toEqual({
+			includeThoughts: false,
+			thinkingBudget: 0,
+		});
+	});
+
+	it("routes to the explicit off wire shape when an external scratchpad replaces reasoning", async () => {
+		const off = await captureRequest(collapsedFlashModel(), Effort.High, { forceReasoningOff: true });
 		expect(off.body.model).toBe("gemini-3.5-flash-extra-low");
 		expect(off.body.request?.generationConfig?.thinkingConfig).toEqual({
 			includeThoughts: false,

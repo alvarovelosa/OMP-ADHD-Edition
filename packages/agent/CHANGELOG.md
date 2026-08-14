@@ -5,6 +5,24 @@
 ### Fixed
 
 - The compaction short-summary prompt now forbids the model from wrapping its output in `<summary>` or any other XML/HTML tag, preventing the `<summary>…</summary>` context wrapper from leaking into session titles via the `shortSummary` fallback consumed by `sessionDisplayName()`.
+## [17.3.4] - 2026-08-14
+
+### Fixed
+
+- Fixed Codex-compatible V2 remote compaction with an explicit `v2Endpoint` by sending the required feature-negotiation header ([#8524](https://github.com/can1357/oh-my-pi/issues/8524)).
+
+## [17.3.0] - 2026-08-13
+
+### Fixed
+
+- Improved the manual `/shake` command to retain a small history of recent tool results, preventing the agent from losing its active working context.
+
+## [17.2.13] - 2026-08-11
+
+### Fixed
+
+- Fixed Cursor sessions re-executing settled tools when an owned dialect projector rebuilds toolCall blocks: `snapshotAssistantContentBlock` now copies `kCursorExecResolved` explicitly so agent-loop still skips already-settled calls.
+
 ## [17.2.10] - 2026-08-06
 
 ### Fixed
