@@ -556,7 +556,13 @@ function inferGeminiSupportedEfforts(model: GeminiModel): readonly Effort[] {
 	if (!semverGte(model.version, "3.0")) {
 		return DEFAULT_REASONING_EFFORTS;
 	}
-	return model.kind === "pro" ? GEMINI_3_PRO_EFFORTS : GEMINI_3_FLASH_EFFORTS;
+	if (model.kind === "pro") {
+		return GEMINI_3_PRO_EFFORTS;
+	}
+	if (semverGte(model.version, "3.7")) {
+		return LOW_MEDIUM_HIGH_REASONING_EFFORTS;
+	}
+	return GEMINI_3_FLASH_EFFORTS;
 }
 
 const OPENAI_O_SERIES_RE = /^o[134](?:$|[-:.])/i;

@@ -26011,14 +26011,12 @@
 			"thinking": {
 				"mode": "google-level",
 				"efforts": [
-					"minimal",
 					"low",
 					"medium",
 					"high"
 				],
 				"requiresEffort": true,
 				"effortRouting": {
-					"minimal": "gemini-3.7-flash-low",
 					"low": "gemini-3.7-flash-low",
 					"medium": "gemini-3.7-flash-medium",
 					"high": "gemini-3.7-flash-high"
@@ -26047,10 +26045,7 @@
 			"thinking": {
 				"mode": "budget",
 				"efforts": [
-					"minimal",
-					"low",
-					"medium",
-					"high"
+					"medium"
 				]
 			}
 		},

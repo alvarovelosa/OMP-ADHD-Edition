@@ -7,6 +7,7 @@ import { isOfficialAnthropicApiUrl } from "@oh-my-pi/pi-catalog/compat/anthropic
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
 import { isVertexExpressOpenAIUrl, isVertexRawPredictUrl, resolveVertexEndpointHost } from "@oh-my-pi/pi-catalog/hosts";
 import {
+	clampThinkingLevelForModel,
 	mapEffortToAnthropicAdaptiveEffort,
 	mapEffortToGoogleThinkingLevel,
 	minimumSupportedEffort,
@@ -1821,12 +1822,17 @@ function normalizeMandatoryReasoningOptions<TApi extends Api>(
 	model: Model<TApi>,
 	options?: SimpleStreamOptions,
 ): SimpleStreamOptions | undefined {
-	if (
-		!model.reasoning ||
-		!model.thinking?.requiresEffort ||
-		model.thinking.suppressWhenOff ||
-		(options?.reasoning !== undefined && !options.disableReasoning && !options.forceReasoningOff)
-	) {
+	if (!model.reasoning || !model.thinking) {
+		return options;
+	}
+	if (options?.reasoning !== undefined && !options.disableReasoning && !options.forceReasoningOff) {
+		const clamped = clampThinkingLevelForModel(model, options.reasoning);
+		if (clamped !== undefined && clamped !== options.reasoning) {
+			return { ...options, reasoning: clamped };
+		}
+		return options;
+	}
+	if (!model.thinking.requiresEffort || model.thinking.suppressWhenOff) {
 		return options;
 	}
 	const floor = minimumSupportedEffort(model);

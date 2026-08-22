@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Gemini 3.7 Flash thinking effort ladder inference: Gemini 3.7+ flash models on Google Antigravity/Cloud Code Assist only support `low`, `medium`, and `high` thinking levels, rejecting `minimal` with a 400 error. The catalog and variant collapse now use `[Effort.Low, Effort.Medium, Effort.High]` for Gemini 3.7+ Flash.
+
 ## [17.3.4] - 2026-08-14
 
 ### Added

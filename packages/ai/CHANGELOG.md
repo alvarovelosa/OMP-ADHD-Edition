@@ -7,6 +7,7 @@
 - Added `/api/tags` and `/api/chat` Ollama-compatible endpoints to `auth-gateway` and enforced reasoning (`reasoning: Effort.High`) for Gemini models.
 
 ### Fixed
+- Fixed mandatory-reasoning models clamping in `normalizeMandatoryReasoningOptions`: when reasoning is omitted or requested with an unsupported level, requests now clamp to the model's `minimumSupportedEffort` rather than attempting an unsupported thinking suppression or out-of-range effort.
 - Fixed the Antigravity payload formatter sending the public `gemini-3.6-flash` model id at its lowest thinking tier (`-low`) regardless of requested effort; it now maps to the tiered wire deployment (`gemini-3.6-flash-low`/`-medium`/`-high`) selected by thinking level, defaulting to `-medium`, while leaving ids that already carry a thinking-level suffix untouched.
 ### Breaking Changes
 
